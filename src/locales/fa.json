@@ -963,8 +963,10 @@
         "revenue": "درآمد",
         "devicePurchases": "خرید دستگاه",
         "deviceRevenue": "درآمد دستگاه",
+        "trafficPurchases": "ترافیک",
+        "devicePurchasesDaily": "دستگاه",
         "byPackage": "بر اساس بسته",
-        "dailyChart": "خرید روزانه",
+        "dailyChart": "خرید روزانه خدمات اضافی",
         "purchases": "خرید"
       },
       "deposits": {

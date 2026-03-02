@@ -1161,8 +1161,10 @@
         "revenue": "Доход",
         "devicePurchases": "Покупки устройств",
         "deviceRevenue": "Доход от устройств",
+        "trafficPurchases": "Трафик",
+        "devicePurchasesDaily": "Устройства",
         "byPackage": "По размеру пакета",
-        "dailyChart": "Покупки по дням",
+        "dailyChart": "Покупки доп. услуг по дням",
         "purchases": "Покупки"
       },
       "deposits": {

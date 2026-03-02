@@ -1140,8 +1140,10 @@
         "revenue": "Revenue",
         "devicePurchases": "Device Purchases",
         "deviceRevenue": "Device Revenue",
+        "trafficPurchases": "Traffic",
+        "devicePurchasesDaily": "Devices",
         "byPackage": "By Package Size",
-        "dailyChart": "Daily Purchases",
+        "dailyChart": "Daily Add-on Purchases",
         "purchases": "Purchases"
       },
       "deposits": {

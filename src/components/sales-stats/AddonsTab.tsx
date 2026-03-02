@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 
@@ -7,7 +8,7 @@ import { SALES_STATS } from '../../constants/salesStats';
 import { useCurrency } from '../../hooks/useCurrency';
 import { StatCard } from '../stats';
 
-import { SimpleAreaChart } from './SimpleAreaChart';
+import { DualAreaChart } from './DualAreaChart';
 import { SimpleBarChart } from './SimpleBarChart';
 
 interface AddonsTabProps {
@@ -23,6 +24,18 @@ export function AddonsTab({ params }: AddonsTabProps) {
     queryFn: () => salesStatsApi.getAddons(params),
     staleTime: SALES_STATS.STALE_TIME,
   });
+
+  const dailyChartData = useMemo(() => {
+    if (!data) return [];
+    const trafficByDate = new Map(data.daily.map((d) => [d.date, d.count]));
+    const deviceByDate = new Map(data.daily_devices.map((d) => [d.date, d.count]));
+    const allDates = Array.from(new Set([...trafficByDate.keys(), ...deviceByDate.keys()])).sort();
+    return allDates.map((date) => ({
+      date,
+      series1: trafficByDate.get(date) ?? 0,
+      series2: deviceByDate.get(date) ?? 0,
+    }));
+  }, [data]);
 
   if (isLoading) {
     return (
@@ -40,11 +53,6 @@ export function AddonsTab({ params }: AddonsTabProps) {
 
   const packageBarData = data.by_package.map((item) => ({
     name: `${item.traffic_gb} GB`,
-    value: item.count,
-  }));
-
-  const dailyData = data.daily.map((item) => ({
-    date: item.date,
     value: item.count,
   }));
 
@@ -77,12 +85,14 @@ export function AddonsTab({ params }: AddonsTabProps) {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <SimpleBarChart data={packageBarData} title={t('admin.salesStats.addons.byPackage')} />
-        <SimpleAreaChart
-          data={dailyData}
+        <DualAreaChart
+          data={dailyChartData}
           title={t('admin.salesStats.addons.dailyChart')}
           chartId="addons-daily"
-          valueLabel={t('admin.salesStats.addons.purchases')}
-          color={SALES_STATS.BAR_COLORS[5]}
+          series1Label={t('admin.salesStats.addons.trafficPurchases')}
+          series2Label={t('admin.salesStats.addons.devicePurchasesDaily')}
+          series1Color={SALES_STATS.BAR_COLORS[5]}
+          series2Color={SALES_STATS.BAR_COLORS[3]}
         />
       </div>
     </div>

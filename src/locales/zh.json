@@ -963,8 +963,10 @@
         "revenue": "收入",
         "devicePurchases": "设备购买",
         "deviceRevenue": "设备收入",
+        "trafficPurchases": "流量",
+        "devicePurchasesDaily": "设备",
         "byPackage": "按套餐大小",
-        "dailyChart": "每日购买",
+        "dailyChart": "每日附加服务购买",
         "purchases": "购买"
       },
       "deposits": {

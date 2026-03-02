@@ -119,6 +119,11 @@ export interface DailyAddonItem {
   total_gb: number;
 }
 
+export interface DailyDeviceItem {
+  date: string;
+  count: number;
+}
+
 export interface AddonsStats {
   total_purchases: number;
   total_gb_purchased: number;
@@ -127,6 +132,7 @@ export interface AddonsStats {
   device_revenue_kopeks: number;
   by_package: AddonByPackageItem[];
   daily: DailyAddonItem[];
+  daily_devices: DailyDeviceItem[];
 }
 
 // ============ Deposits ============
