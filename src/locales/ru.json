@@ -1127,10 +1127,12 @@
       },
       "trials": {
         "total": "Всего триалов",
+        "totalRegistrations": "Регистрации",
+        "trialsIssued": "Выданные триалы",
         "conversion": "Конверсия",
         "avgDuration": "Средняя длит.",
         "byProvider": "По источнику регистрации",
-        "dailyChart": "Регистрации по дням",
+        "dailyChart": "Регистрации и триалы по дням",
         "registrations": "Регистрации"
       },
       "sales": {
@@ -1139,7 +1141,9 @@
         "topTariff": "Топ тариф",
         "byTariff": "Продажи по тарифам",
         "byPeriod": "По периоду подписки",
-        "dailyChart": "Продажи по дням"
+        "dailyChart": "Продажи по дням",
+        "dailyByTariff": "Продажи по тарифам по дням",
+        "subscriptions": "Подписки"
       },
       "renewals": {
         "total": "Всего продлений",
@@ -1155,6 +1159,8 @@
         "totalPurchases": "Всего покупок",
         "totalGb": "Всего трафика",
         "revenue": "Доход",
+        "devicePurchases": "Покупки устройств",
+        "deviceRevenue": "Доход от устройств",
         "byPackage": "По размеру пакета",
         "dailyChart": "Покупки по дням",
         "purchases": "Покупки"

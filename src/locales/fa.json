@@ -929,10 +929,12 @@
       },
       "trials": {
         "total": "کل آزمایشی",
+        "totalRegistrations": "ثبت‌نام‌ها",
+        "trialsIssued": "آزمایشی صادرشده",
         "conversion": "نرخ تبدیل",
         "avgDuration": "میانگین مدت",
         "byProvider": "بر اساس منبع",
-        "dailyChart": "ثبت‌نام روزانه",
+        "dailyChart": "ثبت‌نام و آزمایشی روزانه",
         "registrations": "ثبت‌نام"
       },
       "sales": {
@@ -941,7 +943,9 @@
         "topTariff": "تعرفه برتر",
         "byTariff": "بر اساس تعرفه",
         "byPeriod": "بر اساس دوره",
-        "dailyChart": "فروش روزانه"
+        "dailyChart": "فروش روزانه",
+        "dailyByTariff": "فروش روزانه بر اساس تعرفه",
+        "subscriptions": "اشتراک‌ها"
       },
       "renewals": {
         "total": "کل تمدیدها",
@@ -957,6 +961,8 @@
         "totalPurchases": "کل خرید",
         "totalGb": "کل ترافیک",
         "revenue": "درآمد",
+        "devicePurchases": "خرید دستگاه",
+        "deviceRevenue": "درآمد دستگاه",
         "byPackage": "بر اساس بسته",
         "dailyChart": "خرید روزانه",
         "purchases": "خرید"

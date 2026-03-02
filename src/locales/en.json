@@ -1106,10 +1106,12 @@
       },
       "trials": {
         "total": "Total Trials",
+        "totalRegistrations": "Registrations",
+        "trialsIssued": "Trials Issued",
         "conversion": "Conversion Rate",
         "avgDuration": "Avg Duration",
         "byProvider": "By Registration Source",
-        "dailyChart": "Daily Registrations",
+        "dailyChart": "Daily Registrations & Trials",
         "registrations": "Registrations"
       },
       "sales": {
@@ -1118,7 +1120,9 @@
         "topTariff": "Top Tariff",
         "byTariff": "Sales by Tariff",
         "byPeriod": "By Subscription Period",
-        "dailyChart": "Daily Sales"
+        "dailyChart": "Daily Sales",
+        "dailyByTariff": "Sales by Tariff per Day",
+        "subscriptions": "Subscriptions"
       },
       "renewals": {
         "total": "Total Renewals",
@@ -1134,6 +1138,8 @@
         "totalPurchases": "Total Purchases",
         "totalGb": "Total Traffic",
         "revenue": "Revenue",
+        "devicePurchases": "Device Purchases",
+        "deviceRevenue": "Device Revenue",
         "byPackage": "By Package Size",
         "dailyChart": "Daily Purchases",
         "purchases": "Purchases"

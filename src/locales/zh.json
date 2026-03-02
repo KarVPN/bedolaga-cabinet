@@ -929,10 +929,12 @@
       },
       "trials": {
         "total": "试用总数",
+        "totalRegistrations": "注册数",
+        "trialsIssued": "已发放试用",
         "conversion": "转化率",
         "avgDuration": "平均时长",
         "byProvider": "按注册来源",
-        "dailyChart": "每日注册",
+        "dailyChart": "每日注册与试用",
         "registrations": "注册"
       },
       "sales": {
@@ -941,7 +943,9 @@
         "topTariff": "热门套餐",
         "byTariff": "按套餐",
         "byPeriod": "按订阅周期",
-        "dailyChart": "每日销售"
+        "dailyChart": "每日销售",
+        "dailyByTariff": "每日按套餐销售",
+        "subscriptions": "订阅"
       },
       "renewals": {
         "total": "续订总数",
@@ -957,6 +961,8 @@
         "totalPurchases": "购买总数",
         "totalGb": "总流量",
         "revenue": "收入",
+        "devicePurchases": "设备购买",
+        "deviceRevenue": "设备收入",
         "byPackage": "按套餐大小",
         "dailyChart": "每日购买",
         "purchases": "购买"
