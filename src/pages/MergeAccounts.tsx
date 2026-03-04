@@ -357,22 +357,26 @@ export default function MergeAccounts() {
     // If both have subs — null until user picks
   }, [data, selectedUserId]);
 
-  // Countdown timer
+  // Countdown timer (wall-clock based to avoid drift)
   useEffect(() => {
     if (!data) return;
-    setExpiresIn(data.expires_in_seconds);
+    const startTime = Date.now();
+    const totalSeconds = data.expires_in_seconds;
 
-    const interval = setInterval(() => {
-      setExpiresIn((prev) => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          setIsExpired(true);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+    const tick = () => {
+      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      const remaining = totalSeconds - elapsed;
+      if (remaining <= 0) {
+        setExpiresIn(0);
+        setIsExpired(true);
+        clearInterval(interval);
+      } else {
+        setExpiresIn(remaining);
+      }
+    };
 
+    tick();
+    const interval = setInterval(tick, 1000);
     return () => clearInterval(interval);
   }, [data]);
 

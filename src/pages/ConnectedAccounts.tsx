@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
@@ -42,6 +42,14 @@ export default function ConnectedAccounts() {
   const queryClient = useQueryClient();
 
   const [confirmingUnlink, setConfirmingUnlink] = useState<string | null>(null);
+  const [linkingProvider, setLinkingProvider] = useState<string | null>(null);
+  const blurTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  useEffect(() => {
+    return () => {
+      if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
+    };
+  }, []);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['linked-providers'],
@@ -76,6 +84,8 @@ export default function ConnectedAccounts() {
   };
 
   const handleLink = async (provider: string) => {
+    if (linkingProvider) return;
+    setLinkingProvider(provider);
     try {
       const { authorize_url, state } = await authApi.linkProviderInit(provider);
       sessionStorage.setItem(LINK_OAUTH_STATE_KEY, state);
@@ -86,6 +96,7 @@ export default function ConnectedAccounts() {
         type: 'error',
         message: t('profile.accounts.linkError'),
       });
+      setLinkingProvider(null);
     }
   };
 
@@ -160,7 +171,7 @@ export default function ConnectedAccounts() {
                         onClick={() => handleUnlink(provider.provider)}
                         onBlur={() => {
                           // Delay so click on the same button fires before blur resets state
-                          setTimeout(() => {
+                          blurTimeoutRef.current = setTimeout(() => {
                             setConfirmingUnlink((cur) => (cur === provider.provider ? null : cur));
                           }, 150);
                         }}
@@ -176,6 +187,8 @@ export default function ConnectedAccounts() {
                     <Button
                       variant="primary"
                       size="sm"
+                      disabled={linkingProvider !== null}
+                      loading={linkingProvider === provider.provider}
                       onClick={() => handleLink(provider.provider)}
                     >
                       {t('profile.accounts.link')}
