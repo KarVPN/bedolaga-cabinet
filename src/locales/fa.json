@@ -3054,6 +3054,7 @@
       "linkingTelegram": "در حال اتصال تلگرام...",
       "returnToTelegram": "برای ادامه به تلگرام بازگردید",
       "openTelegram": "باز کردن تلگرام",
+      "continueInBrowser": "ادامه احراز هویت در مرورگر باز شده",
       "providers": {
         "telegram": "تلگرام",
         "email": "ایمیل",

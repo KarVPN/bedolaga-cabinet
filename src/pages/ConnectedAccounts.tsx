@@ -10,8 +10,8 @@ import { Button } from '@/components/primitives/Button';
 import { staggerContainer, staggerItem } from '@/components/motion/transitions';
 import ProviderIcon from '../components/ProviderIcon';
 import { LINK_OAUTH_STATE_KEY, LINK_OAUTH_PROVIDER_KEY } from './LinkOAuthCallback';
-import { isInTelegramWebApp, getTelegramInitData } from '../hooks/useTelegramSDK';
-import { usePlatform } from '@/platform/hooks/usePlatform';
+import { getTelegramInitData } from '../hooks/useTelegramSDK';
+import { usePlatform, useIsTelegram } from '@/platform/hooks/usePlatform';
 import type { LinkedProvider } from '../types';
 
 const OAUTH_PROVIDERS = ['google', 'yandex', 'discord', 'vk'];
@@ -97,9 +97,10 @@ export default function ConnectedAccounts() {
 
   const [confirmingUnlink, setConfirmingUnlink] = useState<string | null>(null);
   const [linkingProvider, setLinkingProvider] = useState<string | null>(null);
+  const [waitingExternalLink, setWaitingExternalLink] = useState(false);
   const blurTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  const inTelegram = isInTelegramWebApp();
+  const inTelegram = useIsTelegram();
   const platform = usePlatform();
 
   useEffect(() => {
@@ -112,7 +113,16 @@ export default function ConnectedAccounts() {
     queryKey: ['linked-providers'],
     queryFn: () => authApi.getLinkedProviders(),
     refetchOnWindowFocus: true,
+    // Poll every 5s while waiting for external browser OAuth to complete
+    refetchInterval: waitingExternalLink ? 5000 : false,
   });
+
+  // Stop polling after 90 seconds
+  useEffect(() => {
+    if (!waitingExternalLink) return;
+    const timeout = setTimeout(() => setWaitingExternalLink(false), 90_000);
+    return () => clearTimeout(timeout);
+  }, [waitingExternalLink]);
 
   const unlinkMutation = useMutation({
     mutationFn: (provider: string) => authApi.unlinkProvider(provider),
@@ -151,8 +161,13 @@ export default function ConnectedAccounts() {
         // Mini App: open in external browser to avoid WebView OAuth restrictions.
         // The callback will use server-complete flow (auth via state token, no JWT).
         platform.openLink(authorize_url);
-        // Reset loading state — user stays in Mini App
         setLinkingProvider(null);
+        // Start polling for linked providers (external browser has no way to notify Mini App)
+        setWaitingExternalLink(true);
+        showToast({
+          type: 'info',
+          message: t('profile.accounts.continueInBrowser'),
+        });
       } else {
         // Regular browser: navigate within the same tab.
         // Save state in sessionStorage for the callback page to verify.

@@ -23,17 +23,17 @@ export function getAndClearOAuthState(): { state: string; provider: string } | n
   return { state, provider };
 }
 
-/**
- * Check if this is an account LINKING callback (user was already authenticated).
- * Returns the saved link state or null.
- */
-function getAndClearLinkOAuthState(): { state: string; provider: string } | null {
+/** Read link OAuth state without clearing (cleared only after successful match). */
+function peekLinkOAuthState(): { state: string; provider: string } | null {
   const state = sessionStorage.getItem(LINK_OAUTH_STATE_KEY);
   const provider = sessionStorage.getItem(LINK_OAUTH_PROVIDER_KEY);
-  sessionStorage.removeItem(LINK_OAUTH_STATE_KEY);
-  sessionStorage.removeItem(LINK_OAUTH_PROVIDER_KEY);
   if (!state || !provider) return null;
   return { state, provider };
+}
+
+function clearLinkOAuthState(): void {
+  sessionStorage.removeItem(LINK_OAUTH_STATE_KEY);
+  sessionStorage.removeItem(LINK_OAUTH_PROVIDER_KEY);
 }
 
 type CallbackMode = 'login' | 'link-browser' | 'link-server';
@@ -78,8 +78,9 @@ export default function OAuthCallback() {
     let savedProvider: string | null = null;
     let savedState: string | null = null;
 
-    const linkSaved = getAndClearLinkOAuthState();
+    const linkSaved = peekLinkOAuthState();
     if (linkSaved && linkSaved.state === urlState) {
+      clearLinkOAuthState();
       mode = 'link-browser';
       savedProvider = linkSaved.provider;
       savedState = linkSaved.state;

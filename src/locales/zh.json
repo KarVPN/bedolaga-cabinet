@@ -3053,6 +3053,7 @@
       "linkingTelegram": "正在关联 Telegram...",
       "returnToTelegram": "返回 Telegram 继续操作",
       "openTelegram": "打开 Telegram",
+      "continueInBrowser": "请在打开的浏览器中继续授权",
       "providers": {
         "telegram": "Telegram",
         "email": "邮箱",

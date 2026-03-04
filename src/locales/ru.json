@@ -4178,6 +4178,7 @@
       "linkingTelegram": "Привязка Telegram...",
       "returnToTelegram": "Вернитесь в Telegram, чтобы продолжить",
       "openTelegram": "Открыть Telegram",
+      "continueInBrowser": "Продолжите авторизацию в открывшемся браузере",
       "providers": {
         "telegram": "Telegram",
         "email": "Email",

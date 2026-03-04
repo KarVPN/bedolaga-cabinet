@@ -3618,6 +3618,7 @@
       "linkingTelegram": "Connecting Telegram...",
       "returnToTelegram": "Return to Telegram to continue",
       "openTelegram": "Open Telegram",
+      "continueInBrowser": "Continue authorization in the opened browser",
       "providers": {
         "telegram": "Telegram",
         "email": "Email",
