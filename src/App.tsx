@@ -37,6 +37,8 @@ const Info = lazy(() => import('./pages/Info'));
 const Wheel = lazy(() => import('./pages/Wheel'));
 const Connection = lazy(() => import('./pages/Connection'));
 const ConnectionQR = lazy(() => import('./pages/ConnectionQR'));
+const QuickPurchase = lazy(() => import('./pages/QuickPurchase'));
+const PurchaseSuccess = lazy(() => import('./pages/PurchaseSuccess'));
 const TopUpMethodSelect = lazy(() => import('./pages/TopUpMethodSelect'));
 const TopUpAmount = lazy(() => import('./pages/TopUpAmount'));
 const ConnectedAccounts = lazy(() => import('./pages/ConnectedAccounts'));
@@ -104,6 +106,8 @@ const AdminRoleAssign = lazy(() => import('./pages/AdminRoleAssign'));
 const AdminPolicies = lazy(() => import('./pages/AdminPolicies'));
 const AdminPolicyEdit = lazy(() => import('./pages/AdminPolicyEdit'));
 const AdminAuditLog = lazy(() => import('./pages/AdminAuditLog'));
+const AdminLandings = lazy(() => import('./pages/AdminLandings'));
+const AdminLandingEditor = lazy(() => import('./pages/AdminLandingEditor'));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
@@ -191,6 +195,22 @@ function App() {
           element={
             <LazyPage>
               <MergeAccounts />
+            </LazyPage>
+          }
+        />
+        <Route
+          path="/buy/success/:token"
+          element={
+            <LazyPage>
+              <PurchaseSuccess />
+            </LazyPage>
+          }
+        />
+        <Route
+          path="/buy/:slug"
+          element={
+            <LazyPage>
+              <QuickPurchase />
             </LazyPage>
           }
         />
@@ -472,6 +492,36 @@ function App() {
             <PermissionRoute permission="tariffs:read">
               <LazyPage>
                 <AdminTariffCreate />
+              </LazyPage>
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/admin/landings"
+          element={
+            <PermissionRoute permission="landings:read">
+              <LazyPage>
+                <AdminLandings />
+              </LazyPage>
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/admin/landings/create"
+          element={
+            <PermissionRoute permission="landings:create">
+              <LazyPage>
+                <AdminLandingEditor />
+              </LazyPage>
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/admin/landings/:id/edit"
+          element={
+            <PermissionRoute permission="landings:edit">
+              <LazyPage>
+                <AdminLandingEditor />
               </LazyPage>
             </PermissionRoute>
           }

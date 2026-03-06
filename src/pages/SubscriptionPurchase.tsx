@@ -772,7 +772,9 @@ export default function SubscriptionPurchase() {
                               />
                             </svg>
                             <span className="text-dark-300">
-                              {t('subscription.devices', { count: tariff.device_limit })}
+                              {tariff.device_limit === 0
+                                ? '∞'
+                                : t('subscription.devices', { count: tariff.device_limit })}
                             </span>
                           </div>
                           {tariff.traffic_reset_mode &&
@@ -959,7 +961,7 @@ export default function SubscriptionPurchase() {
                     <div>
                       <span className="text-dark-500">{t('subscription.devices')}:</span>
                       <span className="ml-2 text-dark-200">
-                        {selectedTariff.device_limit}
+                        {selectedTariff.device_limit === 0 ? '∞' : selectedTariff.device_limit}
                         {selectedTariff.extra_devices_count > 0 && (
                           <span className="ml-1 text-xs text-accent-400">
                             (+{selectedTariff.extra_devices_count})
