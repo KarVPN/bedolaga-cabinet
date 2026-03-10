@@ -4246,11 +4246,9 @@
     "devicesShort": "dev.",
     "gbShort": "GB",
     "unlimitedTraffic": "Unlimited",
-    "shareModalTitle": "Share gift",
-    "shareModalDesc": "Send this message to the gift recipient",
     "shareModalActivateVia": "Activate via bot:",
     "shareModalActivateViaCabinet": "Or via website:",
-    "shareModalCopyAll": "Copy message",
-    "shareModalCopied": "Copied!"
+    "shareToastCopied": "Message copied",
+    "shareToastTapCopy": "tap to copy again"
   }
 }

@@ -4813,11 +4813,9 @@
     "devicesShort_many": "устр.",
     "gbShort": "ГБ",
     "unlimitedTraffic": "Безлимит",
-    "shareModalTitle": "Поделиться подарком",
-    "shareModalDesc": "Отправьте это сообщение получателю подарка",
     "shareModalActivateVia": "Активировать через бота:",
     "shareModalActivateViaCabinet": "Или через сайт:",
-    "shareModalCopyAll": "Скопировать сообщение",
-    "shareModalCopied": "Скопировано!"
+    "shareToastCopied": "Сообщение скопировано",
+    "shareToastTapCopy": "нажмите чтобы скопировать ещё раз"
   }
 }

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -15,6 +15,7 @@ import type {
 } from '../api/gift';
 
 import { cn } from '../lib/utils';
+import { copyToClipboard } from '../utils/clipboard';
 import { getApiErrorMessage } from '../utils/api-error';
 import { formatPrice } from '../utils/format';
 
@@ -54,23 +55,6 @@ function CheckIcon({ className }: { className?: string }) {
       strokeLinejoin="round"
     >
       <path d="M5 13l4 4L19 7" />
-    </svg>
-  );
-}
-
-function CopyIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <rect x="9" y="9" width="13" height="13" rx="2" />
-      <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
     </svg>
   );
 }
@@ -969,174 +953,53 @@ function ActivateTabContent({ initialCode }: { initialCode?: string | null }) {
 // Sub-components: My Gifts Tab
 // ============================================================
 
-function ShareModal({ gift, onClose }: { gift: SentGift; onClose: () => void }) {
+function ShareToast({ message, onDismiss }: { message: string; onDismiss: () => void }) {
   const { t } = useTranslation();
-  const [copied, setCopied] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  // Escape key + scroll lock
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', handler);
-    document.body.style.overflow = 'hidden';
+    timerRef.current = setTimeout(onDismiss, 5000);
     return () => {
-      document.removeEventListener('keydown', handler);
-      document.body.style.overflow = '';
+      if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [onClose]);
+  }, [onDismiss]);
 
-  const shortCode = gift.token.slice(0, 12);
-  const botUsername = import.meta.env.VITE_TELEGRAM_BOT_USERNAME as string | undefined;
-  const botLink = botUsername ? `https://t.me/${botUsername}?start=GIFT_${shortCode}` : null;
-  const cabinetLink = `${window.location.origin}/gift?tab=activate&code=${shortCode}`;
-
-  const fullMessage = [
-    t('gift.shareText'),
-    '',
-    botLink ? `${t('gift.shareModalActivateVia')} ${botLink}` : null,
-    `${t('gift.shareModalActivateViaCabinet')} ${cabinetLink}`,
-  ]
-    .filter(Boolean)
-    .join('\n');
-
-  const handleCopyAll = async () => {
-    try {
-      await navigator.clipboard.writeText(fullMessage);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // fallback
-    }
-  };
+  const handleClick = useCallback(async () => {
+    await copyToClipboard(message);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(onDismiss, 2000);
+  }, [message, onDismiss]);
 
   return (
     <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.2 }}
-      className="fixed inset-0 z-50 flex items-end justify-center px-4 pb-6 sm:items-center sm:pb-0"
-      onClick={onClose}
+      initial={{ opacity: 0, y: 60 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 60 }}
+      transition={{ duration: 0.25, ease: 'easeOut' }}
+      className="fixed inset-x-0 bottom-6 z-50 mx-auto w-[calc(100%-2rem)] max-w-md px-1"
     >
-      {/* Backdrop */}
-      <div className="absolute inset-0 backdrop-blur-sm" />
-
-      {/* Modal content */}
-      <motion.div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="share-modal-title"
-        initial={{ opacity: 0, y: 40, scale: 0.95 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: 40, scale: 0.95 }}
-        transition={{ duration: 0.25, ease: 'easeOut' }}
-        className="relative w-full max-w-md overflow-hidden rounded-2xl border border-dark-700/50 bg-dark-900 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
+      <button
+        type="button"
+        onClick={handleClick}
+        className="w-full rounded-2xl border border-dark-700/50 bg-dark-900/95 p-4 text-left shadow-2xl shadow-black/40 backdrop-blur-md transition-colors active:bg-dark-800/95"
       >
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-dark-800/50 px-5 py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-accent-500/20">
-              <ShareIcon className="h-4.5 w-4.5 text-accent-400" />
-            </div>
-            <div>
-              <h3 id="share-modal-title" className="text-base font-bold text-dark-50">
-                {t('gift.shareModalTitle')}
-              </h3>
-              <p className="text-xs text-dark-400">{t('gift.shareModalDesc')}</p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-dark-400 transition-colors hover:bg-dark-800 hover:text-dark-200"
-            aria-label={t('common.cancel')}
-          >
-            <svg
-              className="h-5 w-5"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+        <div className="mb-2 flex items-center gap-2">
+          <CheckIcon className="h-4 w-4 text-success-400" />
+          <span className="text-xs font-bold text-success-400">{t('gift.shareToastCopied')}</span>
+          <span className="ml-auto text-xs text-dark-500">{t('gift.shareToastTapCopy')}</span>
         </div>
-
-        {/* Message preview */}
-        <div className="px-5 py-4">
-          <div className="rounded-xl border border-dark-700/30 bg-dark-800/40 p-4">
-            <p className="mb-3 text-sm font-medium text-dark-100">{t('gift.shareText')}</p>
-
-            {botLink && (
-              <div className="mb-2">
-                <p className="mb-1 text-xs font-medium text-dark-400">
-                  {t('gift.shareModalActivateVia')}
-                </p>
-                <a
-                  href={botLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block truncate rounded-lg bg-dark-900/60 px-3 py-2 text-sm text-accent-400 transition-colors hover:bg-dark-900"
-                >
-                  {botLink}
-                </a>
-              </div>
-            )}
-
-            <div>
-              <p className="mb-1 text-xs font-medium text-dark-400">
-                {t('gift.shareModalActivateViaCabinet')}
-              </p>
-              <a
-                href={cabinetLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block truncate rounded-lg bg-dark-900/60 px-3 py-2 text-sm text-accent-400 transition-colors hover:bg-dark-900"
-              >
-                {cabinetLink}
-              </a>
-            </div>
-          </div>
-        </div>
-
-        {/* Actions */}
-        <div className="border-t border-dark-800/50 px-5 py-4">
-          <button
-            type="button"
-            onClick={handleCopyAll}
-            className={cn(
-              'flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3.5 text-sm font-bold transition-all duration-200 active:scale-[0.98]',
-              copied
-                ? 'bg-success-500/20 text-success-400'
-                : 'bg-accent-500 text-white shadow-lg shadow-accent-500/25 hover:bg-accent-400',
-            )}
-          >
-            {copied ? (
-              <>
-                <CheckIcon className="h-4 w-4" />
-                {t('gift.shareModalCopied')}
-              </>
-            ) : (
-              <>
-                <CopyIcon className="h-4 w-4" />
-                {t('gift.shareModalCopyAll')}
-              </>
-            )}
-          </button>
-        </div>
-      </motion.div>
+        <p className="line-clamp-4 whitespace-pre-line text-xs text-dark-300">{message}</p>
+      </button>
     </motion.div>
   );
 }
 
 function SentGiftCard({ gift }: { gift: SentGift }) {
   const { t } = useTranslation();
-  const [showShareModal, setShowShareModal] = useState(false);
+  const [showToast, setShowToast] = useState(false);
 
-  const giftCode = `GIFT-${gift.token.slice(0, 12)}`;
+  const shortCode = gift.token.slice(0, 12);
+  const giftCode = `GIFT-${shortCode}`;
   const isActivated = isGiftActivated(gift);
   const isAvailable = !isActivated && isGiftAvailable(gift.status);
 
@@ -1145,6 +1008,28 @@ function SentGiftCard({ gift }: { gift: SentGift }) {
     : isAvailable
       ? t('gift.statusAvailable')
       : t(getGiftStatusKey(gift.status));
+
+  const buildShareMessage = useCallback(() => {
+    const botUsername = import.meta.env.VITE_TELEGRAM_BOT_USERNAME as string | undefined;
+    const botLink = botUsername ? `https://t.me/${botUsername}?start=GIFT_${shortCode}` : null;
+    const cabinetLink = `${window.location.origin}/gift?tab=activate&code=${shortCode}`;
+    return [
+      t('gift.shareText'),
+      '',
+      botLink ? `${t('gift.shareModalActivateVia')} ${botLink}` : null,
+      `${t('gift.shareModalActivateViaCabinet')} ${cabinetLink}`,
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }, [shortCode, t]);
+
+  const handleShare = useCallback(async () => {
+    const message = buildShareMessage();
+    await copyToClipboard(message);
+    setShowToast(true);
+  }, [buildShareMessage]);
+
+  const handleDismissToast = useCallback(() => setShowToast(false), []);
 
   return (
     <div className="rounded-2xl border border-dark-800/50 bg-dark-900/50 p-4">
@@ -1184,10 +1069,10 @@ function SentGiftCard({ gift }: { gift: SentGift }) {
             </p>
           </div>
 
-          {/* Share button — opens modal */}
+          {/* Share button — copies message and shows toast */}
           <button
             type="button"
-            onClick={() => setShowShareModal(true)}
+            onClick={handleShare}
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent-500 px-4 py-3 text-sm font-bold uppercase tracking-wider text-white transition-colors hover:bg-accent-400 active:scale-[0.98]"
           >
             <ShareIcon className="h-4 w-4" />
@@ -1210,9 +1095,9 @@ function SentGiftCard({ gift }: { gift: SentGift }) {
         </p>
       )}
 
-      {/* Share modal */}
+      {/* Share toast */}
       <AnimatePresence>
-        {showShareModal && <ShareModal gift={gift} onClose={() => setShowShareModal(false)} />}
+        {showToast && <ShareToast message={buildShareMessage()} onDismiss={handleDismissToast} />}
       </AnimatePresence>
     </div>
   );
