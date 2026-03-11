@@ -2299,7 +2299,8 @@
           "subscription": "订阅",
           "balance": "余额",
           "sync": "同步",
-          "tickets": "工单"
+          "tickets": "工单",
+          "gifts": "礼物"
         },
         "noTickets": "该用户没有工单",
         "ticketsCount": "个工单",
@@ -2419,6 +2420,41 @@
           "notLinked": "未绑定",
           "fromPanel": "从面板同步到机器人",
           "toPanel": "从机器人同步到面板"
+        },
+        "gifts": {
+          "title": "用户礼物",
+          "sentTitle": "已发送的礼物",
+          "receivedTitle": "已收到的礼物",
+          "noSent": "该用户未发送过礼物",
+          "noReceived": "该用户未收到过礼物",
+          "noGifts": "没有礼物",
+          "token": "代码",
+          "tariff": "套餐",
+          "period": "期限",
+          "devices": "设备数",
+          "amount": "金额",
+          "paymentMethod": "支付方式",
+          "recipient": "收件人",
+          "sender": "发送人",
+          "message": "留言",
+          "createdAt": "创建时间",
+          "paidAt": "支付时间",
+          "deliveredAt": "激活时间",
+          "status": {
+            "pending": "待处理",
+            "paid": "已支付",
+            "delivered": "已送达",
+            "pending_activation": "待激活",
+            "failed": "失败",
+            "expired": "已过期"
+          },
+          "days": "天",
+          "codeOnly": "仅代码",
+          "via": "通过",
+          "balance": "余额",
+          "unknownUser": "未知",
+          "totalSent": "已发送总数",
+          "totalReceived": "已收到总数"
         }
       }
     },

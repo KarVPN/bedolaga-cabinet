@@ -351,6 +351,36 @@ export interface SyncToPanelRequest {
   update_squads?: boolean;
 }
 
+export interface AdminUserGiftItem {
+  id: number;
+  token: string;
+  status: string;
+  tariff_name: string | null;
+  period_days: number;
+  device_limit: number;
+  amount_kopeks: number;
+  payment_method: string | null;
+  gift_recipient_type: string | null;
+  gift_recipient_value: string | null;
+  gift_message: string | null;
+  buyer_user_id: number | null;
+  buyer_username: string | null;
+  buyer_full_name: string | null;
+  receiver_user_id: number | null;
+  receiver_username: string | null;
+  receiver_full_name: string | null;
+  created_at: string | null;
+  paid_at: string | null;
+  delivered_at: string | null;
+}
+
+export interface AdminUserGiftsResponse {
+  sent: AdminUserGiftItem[];
+  received: AdminUserGiftItem[];
+  sent_total: number;
+  received_total: number;
+}
+
 // ============ API ============
 
 export const adminUsersApi = {
@@ -612,6 +642,12 @@ export const adminUsersApi = {
     userId: number,
   ): Promise<{ success: boolean; message: string; deleted_count: number }> => {
     const response = await apiClient.delete(`/cabinet/admin/users/${userId}/devices`);
+    return response.data;
+  },
+
+  // Get user gifts
+  getUserGifts: async (userId: number): Promise<AdminUserGiftsResponse> => {
+    const response = await apiClient.get(`/cabinet/admin/users/${userId}/gifts`);
     return response.data;
   },
 };

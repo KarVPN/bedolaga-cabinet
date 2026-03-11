@@ -3184,7 +3184,8 @@
           "subscription": "Подписка",
           "balance": "Баланс",
           "sync": "Синхронизация",
-          "tickets": "Тикеты"
+          "tickets": "Тикеты",
+          "gifts": "Подарки"
         },
         "noTickets": "У пользователя нет тикетов",
         "ticketsCount": "тикетов",
@@ -3307,6 +3308,41 @@
           "notLinked": "Не привязан",
           "fromPanel": "Из панели в бота",
           "toPanel": "Из бота в панель"
+        },
+        "gifts": {
+          "title": "Подарки пользователя",
+          "sentTitle": "Отправленные подарки",
+          "receivedTitle": "Полученные подарки",
+          "noSent": "Пользователь не отправлял подарков",
+          "noReceived": "Пользователь не получал подарков",
+          "noGifts": "Нет подарков",
+          "token": "Код",
+          "tariff": "Тариф",
+          "period": "Период",
+          "devices": "Устройств",
+          "amount": "Сумма",
+          "paymentMethod": "Способ оплаты",
+          "recipient": "Получатель",
+          "sender": "Отправитель",
+          "message": "Сообщение",
+          "createdAt": "Создан",
+          "paidAt": "Оплачен",
+          "deliveredAt": "Активирован",
+          "status": {
+            "pending": "Ожидание",
+            "paid": "Оплачен",
+            "delivered": "Доставлен",
+            "pending_activation": "Ожидает активации",
+            "failed": "Ошибка",
+            "expired": "Истёк"
+          },
+          "days": "дн.",
+          "codeOnly": "Только код",
+          "via": "через",
+          "balance": "баланс",
+          "unknownUser": "Неизвестный",
+          "totalSent": "Всего отправлено",
+          "totalReceived": "Всего получено"
         }
       }
     },

@@ -2662,7 +2662,8 @@
           "subscription": "Subscription",
           "balance": "Balance",
           "sync": "Synchronization",
-          "tickets": "Tickets"
+          "tickets": "Tickets",
+          "gifts": "Gifts"
         },
         "noTickets": "No tickets from this user",
         "ticketsCount": "tickets",
@@ -2786,6 +2787,41 @@
           "notLinked": "Not linked",
           "fromPanel": "From panel to bot",
           "toPanel": "From bot to panel"
+        },
+        "gifts": {
+          "title": "User Gifts",
+          "sentTitle": "Sent Gifts",
+          "receivedTitle": "Received Gifts",
+          "noSent": "No gifts sent by this user",
+          "noReceived": "No gifts received by this user",
+          "noGifts": "No gifts",
+          "token": "Code",
+          "tariff": "Tariff",
+          "period": "Period",
+          "devices": "Devices",
+          "amount": "Amount",
+          "paymentMethod": "Payment method",
+          "recipient": "Recipient",
+          "sender": "Sender",
+          "message": "Message",
+          "createdAt": "Created",
+          "paidAt": "Paid",
+          "deliveredAt": "Activated",
+          "status": {
+            "pending": "Pending",
+            "paid": "Paid",
+            "delivered": "Delivered",
+            "pending_activation": "Pending activation",
+            "failed": "Failed",
+            "expired": "Expired"
+          },
+          "days": "d",
+          "codeOnly": "Code only",
+          "via": "via",
+          "balance": "balance",
+          "unknownUser": "Unknown",
+          "totalSent": "Total sent",
+          "totalReceived": "Total received"
         }
       }
     },

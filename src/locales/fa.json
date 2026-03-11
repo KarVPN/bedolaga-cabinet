@@ -2300,7 +2300,8 @@
           "subscription": "اشتراک",
           "balance": "موجودی",
           "sync": "همگام‌سازی",
-          "tickets": "تیکت‌ها"
+          "tickets": "تیکت‌ها",
+          "gifts": "هدایا"
         },
         "noTickets": "این کاربر تیکتی ندارد",
         "ticketsCount": "تیکت",
@@ -2420,6 +2421,41 @@
           "notLinked": "متصل نشده",
           "fromPanel": "از پنل به ربات",
           "toPanel": "از ربات به پنل"
+        },
+        "gifts": {
+          "title": "هدایای کاربر",
+          "sentTitle": "هدایای ارسال شده",
+          "receivedTitle": "هدایای دریافت شده",
+          "noSent": "این کاربر هدیه‌ای ارسال نکرده است",
+          "noReceived": "این کاربر هدیه‌ای دریافت نکرده است",
+          "noGifts": "بدون هدیه",
+          "token": "کد",
+          "tariff": "تعرفه",
+          "period": "دوره",
+          "devices": "دستگاه‌ها",
+          "amount": "مبلغ",
+          "paymentMethod": "روش پرداخت",
+          "recipient": "گیرنده",
+          "sender": "فرستنده",
+          "message": "پیام",
+          "createdAt": "ایجاد شده",
+          "paidAt": "پرداخت شده",
+          "deliveredAt": "فعال شده",
+          "status": {
+            "pending": "در انتظار",
+            "paid": "پرداخت شده",
+            "delivered": "تحویل داده شده",
+            "pending_activation": "در انتظار فعال‌سازی",
+            "failed": "ناموفق",
+            "expired": "منقضی شده"
+          },
+          "days": "روز",
+          "codeOnly": "فقط کد",
+          "via": "از طریق",
+          "balance": "موجودی",
+          "unknownUser": "ناشناس",
+          "totalSent": "کل ارسال شده",
+          "totalReceived": "کل دریافت شده"
         }
       }
     },
