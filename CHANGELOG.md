@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.33.2](https://github.com/BEDOLAGA-DEV/bedolaga-cabinet/compare/v1.33.1...v1.33.2) (2026-03-13)
+
+
+### Bug Fixes
+
+* resolve telegram auth token expiration and clean up codebase ([c0b834a](https://github.com/BEDOLAGA-DEV/bedolaga-cabinet/commit/c0b834ab0610c3dc23e27099f224177187181c8a))
+* resolve telegram auth token expiration and clean up codebase ([2dab25c](https://github.com/BEDOLAGA-DEV/bedolaga-cabinet/commit/2dab25c5a036fb90f75c80e4e28f2a53885f9038))
+
 ## [1.33.1](https://github.com/BEDOLAGA-DEV/bedolaga-cabinet/compare/v1.33.0...v1.33.1) (2026-03-13)
 
 
