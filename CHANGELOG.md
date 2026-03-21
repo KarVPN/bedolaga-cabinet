@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.39.1](https://github.com/BEDOLAGA-DEV/bedolaga-cabinet/compare/v1.39.0...v1.39.1) (2026-03-21)
+
+
+### Bug Fixes
+
+* infinite reload loop on login when Telegram widget unavailable ([c34375e](https://github.com/BEDOLAGA-DEV/bedolaga-cabinet/commit/c34375e579b159b9a47421c4fddd992d630e74aa))
+
 ## [1.39.0](https://github.com/BEDOLAGA-DEV/bedolaga-cabinet/compare/v1.38.0...v1.39.0) (2026-03-20)
 
 
