@@ -166,7 +166,6 @@ function buildFullGraph(graphData: NetworkGraphData): Graph {
   graphData.users.forEach((user) => {
     const fillColor = getNodeFillColor(
       user.subscription_status,
-      user.campaign_id,
       user.direct_referrals,
       user.is_partner,
     );

@@ -40,11 +40,10 @@ export function getSubscriptionStatusColor(status: SubscriptionStatus): string {
  * Fill color priority:
  * 1. Subscription status (when available)
  * 2. Referral role (when no subscription data — keeps visual differentiation)
- * 3. Campaign user / regular fallback
+ * 3. Regular fallback (campaign membership visible via edges, not fill)
  */
 export function getNodeFillColor(
   subscriptionStatus: SubscriptionStatus | null,
-  campaignId: number | null,
   directReferrals: number = 0,
   isPartner: boolean = false,
 ): string {
@@ -52,7 +51,6 @@ export function getNodeFillColor(
   if (isPartner) return NODE_COLORS.partner;
   if (directReferrals >= 10) return NODE_COLORS.topReferrer;
   if (directReferrals >= 1) return NODE_COLORS.activeReferrer;
-  if (campaignId !== null) return NODE_COLORS.campaignUser;
   return NODE_COLORS.regular;
 }
 

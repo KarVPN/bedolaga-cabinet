@@ -15,7 +15,6 @@ const FILL_ITEMS = [
   { color: NODE_COLORS.partner, labelKey: 'admin.referralNetwork.legend.partner' },
   { color: NODE_COLORS.topReferrer, labelKey: 'admin.referralNetwork.legend.topReferrer' },
   { color: NODE_COLORS.activeReferrer, labelKey: 'admin.referralNetwork.legend.activeReferrer' },
-  { color: NODE_COLORS.campaignUser, labelKey: 'admin.referralNetwork.legend.campaignUser' },
   { color: NODE_COLORS.regular, labelKey: 'admin.referralNetwork.legend.regularUser' },
 ];
 
