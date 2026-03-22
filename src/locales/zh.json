@@ -172,6 +172,9 @@
     "waitingForConfirmation": "等待确认...",
     "deepLinkExpired": "链接已过期，请重试。",
     "tryAgain": "重试",
+    "scanQrToLogin": "用手机相机扫描二维码",
+    "orSendCommand": "或向机器人发送命令：",
+    "commandCopied": "命令已复制",
     "welcomeBack": "欢迎回来！",
     "loginTitle": "登录个人中心",
     "loginSubtitle": "通过Telegram或邮箱登录",
@@ -1410,7 +1413,14 @@
       "enableEmail": "Email",
       "sendingBoth": "将创建2个群发",
       "bothCreated": "群发已创建",
-      "atLeastOneChannel": "请至少选择一个渠道"
+      "atLeastOneChannel": "请至少选择一个渠道",
+      "customButtons": "自定义按钮",
+      "addCustomButton": "添加按钮",
+      "customButtonLabelPlaceholder": "按钮文字",
+      "customButtonTypeCallback": "回调",
+      "customButtonTypeUrl": "链接",
+      "customButtonCallbackPlaceholder": "callback_data（例如 back_to_menu）",
+      "customButtonUrlPlaceholder": "https://example.com"
     },
     "pinnedMessages": {
       "title": "置顶消息",

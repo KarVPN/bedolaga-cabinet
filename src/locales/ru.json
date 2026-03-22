@@ -183,6 +183,9 @@
     "waitingForConfirmation": "Ожидание подтверждения...",
     "deepLinkExpired": "Ссылка истекла. Попробуйте снова.",
     "tryAgain": "Попробовать снова",
+    "scanQrToLogin": "Отсканируйте QR-код камерой телефона",
+    "orSendCommand": "Или отправьте боту команду:",
+    "commandCopied": "Команда скопирована",
     "welcomeBack": "Добро пожаловать!",
     "loginTitle": "Вход в личный кабинет",
     "loginSubtitle": "Войдите через Telegram или используйте email",
@@ -1726,7 +1729,14 @@
       "enableEmail": "Email",
       "sendingBoth": "Будет создано 2 рассылки",
       "bothCreated": "Рассылки созданы",
-      "atLeastOneChannel": "Выберите хотя бы один канал"
+      "atLeastOneChannel": "Выберите хотя бы один канал",
+      "customButtons": "Кастомные кнопки",
+      "addCustomButton": "Добавить кнопку",
+      "customButtonLabelPlaceholder": "Текст кнопки",
+      "customButtonTypeCallback": "Callback",
+      "customButtonTypeUrl": "Ссылка",
+      "customButtonCallbackPlaceholder": "callback_data (например, back_to_menu)",
+      "customButtonUrlPlaceholder": "https://example.com"
     },
     "pinnedMessages": {
       "title": "Закреплённые сообщения",

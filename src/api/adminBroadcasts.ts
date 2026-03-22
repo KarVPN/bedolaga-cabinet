@@ -48,6 +48,12 @@ export interface BroadcastButtonsResponse {
   buttons: BroadcastButton[];
 }
 
+export interface CustomBroadcastButton {
+  label: string;
+  action_type: 'callback' | 'url';
+  action_value: string;
+}
+
 export interface BroadcastMedia {
   type: 'photo' | 'video' | 'document';
   file_id: string;
@@ -73,6 +79,7 @@ export interface CombinedBroadcastCreateRequest {
   // Telegram fields
   message_text?: string;
   selected_buttons?: string[];
+  custom_buttons?: CustomBroadcastButton[];
   media?: BroadcastMedia;
   // Email fields
   email_subject?: string;

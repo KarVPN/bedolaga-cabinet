@@ -180,6 +180,9 @@
     "waitingForConfirmation": "Waiting for confirmation...",
     "deepLinkExpired": "Link expired. Please try again.",
     "tryAgain": "Try Again",
+    "scanQrToLogin": "Scan QR code with your phone camera",
+    "orSendCommand": "Or send the bot this command:",
+    "commandCopied": "Command copied",
     "welcomeBack": "Welcome back!",
     "loginTitle": "Login to Cabinet",
     "loginSubtitle": "Sign in with Telegram or use your email",
@@ -1701,7 +1704,14 @@
       "enableEmail": "Email",
       "sendingBoth": "2 broadcasts will be created",
       "bothCreated": "Broadcasts created",
-      "atLeastOneChannel": "Select at least one channel"
+      "atLeastOneChannel": "Select at least one channel",
+      "customButtons": "Custom buttons",
+      "addCustomButton": "Add button",
+      "customButtonLabelPlaceholder": "Button text",
+      "customButtonTypeCallback": "Callback",
+      "customButtonTypeUrl": "URL",
+      "customButtonCallbackPlaceholder": "callback_data (e.g. back_to_menu)",
+      "customButtonUrlPlaceholder": "https://example.com"
     },
     "pinnedMessages": {
       "title": "Pinned Messages",

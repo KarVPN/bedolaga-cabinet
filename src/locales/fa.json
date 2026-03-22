@@ -172,6 +172,9 @@
     "waitingForConfirmation": "در انتظار تایید...",
     "deepLinkExpired": "لینک منقضی شده است. لطفا دوباره تلاش کنید.",
     "tryAgain": "تلاش مجدد",
+    "scanQrToLogin": "کد QR را با دوربین گوشی اسکن کنید",
+    "orSendCommand": "یا این دستور را به ربات ارسال کنید:",
+    "commandCopied": "دستور کپی شد",
     "welcomeBack": "خوش آمدید!",
     "loginTitle": "ورود به کابین",
     "loginSubtitle": "با تلگرام یا ایمیل وارد شوید",
@@ -1336,7 +1339,14 @@
       "enableEmail": "Email",
       "sendingBoth": "۲ پیام‌رسانی ایجاد خواهد شد",
       "bothCreated": "پیام‌رسانی‌ها ایجاد شدند",
-      "atLeastOneChannel": "حداقل یک کانال را انتخاب کنید"
+      "atLeastOneChannel": "حداقل یک کانال را انتخاب کنید",
+      "customButtons": "دکمه‌های سفارشی",
+      "addCustomButton": "افزودن دکمه",
+      "customButtonLabelPlaceholder": "متن دکمه",
+      "customButtonTypeCallback": "Callback",
+      "customButtonTypeUrl": "لینک",
+      "customButtonCallbackPlaceholder": "callback_data (مثلاً back_to_menu)",
+      "customButtonUrlPlaceholder": "https://example.com"
     },
     "pinnedMessages": {
       "title": "Pinned Messages",
