@@ -235,7 +235,7 @@ export default function TelegramLoginButton({ referralCode }: TelegramLoginButto
   const startDeepLinkAuth = useCallback(async () => {
     setDeepLinkError('');
 
-    // Clear any previous timers
+    // Clear any previous timers and in-flight guard
     if (pollTimeoutRef.current) {
       clearTimeout(pollTimeoutRef.current);
       pollTimeoutRef.current = null;
@@ -244,6 +244,7 @@ export default function TelegramLoginButton({ referralCode }: TelegramLoginButto
       clearTimeout(expireTimeoutRef.current);
       expireTimeoutRef.current = null;
     }
+    pollInFlightRef.current = false;
 
     try {
       // Consume campaign slug ONCE (first call only).
@@ -288,14 +289,22 @@ export default function TelegramLoginButton({ referralCode }: TelegramLoginButto
               return;
             }
             if (err.response?.status === 410) {
-              // Token expired
+              // Token expired — clear expire timer to prevent stale timer killing future sessions
+              if (expireTimeoutRef.current) {
+                clearTimeout(expireTimeoutRef.current);
+                expireTimeoutRef.current = null;
+              }
               setDeepLinkPolling(false);
               setDeepLinkToken(null);
               setDeepLinkError(t('auth.deepLinkExpired'));
               return;
             }
           }
-          // Other error — stop polling
+          // Other error — stop polling and clear expire timer
+          if (expireTimeoutRef.current) {
+            clearTimeout(expireTimeoutRef.current);
+            expireTimeoutRef.current = null;
+          }
           setDeepLinkPolling(false);
           setDeepLinkError(t('common.error'));
         } finally {
@@ -376,11 +385,19 @@ export default function TelegramLoginButton({ referralCode }: TelegramLoginButto
                 return;
               }
               if (err.response?.status === 410) {
+                if (expireTimeoutRef.current) {
+                  clearTimeout(expireTimeoutRef.current);
+                  expireTimeoutRef.current = null;
+                }
                 setDeepLinkPolling(false);
                 setDeepLinkToken(null);
                 setDeepLinkError(t('auth.deepLinkExpired'));
                 return;
               }
+            }
+            if (expireTimeoutRef.current) {
+              clearTimeout(expireTimeoutRef.current);
+              expireTimeoutRef.current = null;
             }
             setDeepLinkPolling(false);
             setDeepLinkError(t('common.error'));
