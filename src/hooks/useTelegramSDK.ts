@@ -66,6 +66,14 @@ export function getTelegramInitData(): string | null {
   }
 }
 
+export function getTelegramStartParam(): string | null {
+  try {
+    return retrieveLaunchParams().tgWebAppStartParam || null;
+  } catch {
+    return null;
+  }
+}
+
 export type TelegramPlatform =
   | 'android'
   | 'ios'

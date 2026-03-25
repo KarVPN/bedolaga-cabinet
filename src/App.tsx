@@ -1,5 +1,5 @@
-import { lazy, Suspense } from 'react';
-import { Routes, Route, Navigate, useLocation } from 'react-router';
+import { lazy, Suspense, useEffect } from 'react';
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router';
 import { useAuthStore } from './store/auth';
 import { useBlockingStore } from './store/blocking';
 import Layout from './components/layout/Layout';
@@ -13,6 +13,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { PermissionRoute } from '@/components/auth/PermissionRoute';
 import { saveReturnUrl } from './utils/token';
 import { useAnalyticsCounters } from './hooks/useAnalyticsCounters';
+import { getTelegramStartParam, isInTelegramWebApp } from './hooks/useTelegramSDK';
 // Auth pages - load immediately (small)
 import Login from './pages/Login';
 import TelegramCallback from './pages/TelegramCallback';
@@ -192,6 +193,42 @@ function BlockingOverlay() {
 
 function App() {
   useAnalyticsCounters();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const isLoading = useAuthStore((state) => state.isLoading);
+
+  useEffect(() => {
+    if (!isInTelegramWebApp()) return;
+    if (isLoading) return;
+
+    const startParam = getTelegramStartParam();
+    if (!startParam || !startParam.startsWith('topup_result_')) return;
+
+    const method = startParam.slice('topup_result_'.length).trim().toLowerCase();
+    if (!method) return;
+
+    const redirectTarget = `/balance/top-up/result?method=${encodeURIComponent(method)}`;
+    const processedKey = `startapp-redirect:${startParam}`;
+
+    try {
+      if (sessionStorage.getItem(processedKey) === '1') {
+        return;
+      }
+      sessionStorage.setItem(processedKey, '1');
+    } catch {}
+
+    if (location.pathname === '/balance/top-up/result' && location.search.includes(`method=${method}`)) {
+      return;
+    }
+
+    if (isAuthenticated) {
+      navigate(redirectTarget, { replace: true });
+      return;
+    }
+
+    navigate(`/tg?redirect=${encodeURIComponent(redirectTarget)}`, { replace: true });
+  }, [isAuthenticated, isLoading, location.pathname, location.search, navigate]);
 
   return (
     <>

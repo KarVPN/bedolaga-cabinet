@@ -42,6 +42,7 @@ export const balanceApi = {
     amountKopeks: number,
     paymentMethod: string,
     paymentOption?: string,
+    returnToMiniApp?: boolean,
   ): Promise<{
     payment_id: string;
     payment_url: string;
@@ -54,12 +55,16 @@ export const balanceApi = {
       amount_kopeks: number;
       payment_method: string;
       payment_option?: string;
+      return_to_miniapp?: boolean;
     } = {
       amount_kopeks: amountKopeks,
       payment_method: paymentMethod,
     };
     if (paymentOption) {
       payload.payment_option = paymentOption;
+    }
+    if (returnToMiniApp) {
+      payload.return_to_miniapp = true;
     }
     const response = await apiClient.post('/cabinet/balance/topup', payload);
     return response.data;

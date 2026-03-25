@@ -10,6 +10,7 @@ import { checkRateLimit, getRateLimitResetTime, RATE_LIMIT_KEYS } from '../utils
 import { useCloseOnSuccessNotification } from '../store/successNotification';
 import { useHaptic, usePlatform } from '@/platform';
 import { staggerContainer, staggerItem } from '@/components/motion/transitions';
+import { useTelegramSDK } from '../hooks/useTelegramSDK';
 import type { PaymentMethod } from '../types';
 import BentoCard from '../components/ui/BentoCard';
 import { saveTopUpPendingInfo } from '../utils/topUpStorage';
@@ -90,6 +91,7 @@ export default function TopUpAmount() {
     useCurrency();
   const { openInvoice, openTelegramLink, openLink } = usePlatform();
   const haptic = useHaptic();
+  const { isTelegramWebApp } = useTelegramSDK();
   const inputRef = useRef<HTMLInputElement>(null);
 
   const returnTo = searchParams.get('returnTo');
@@ -197,7 +199,12 @@ export default function TopUpAmount() {
   >({
     mutationFn: (amountKopeks: number) => {
       if (!method) throw new Error('Method not loaded');
-      return balanceApi.createTopUp(amountKopeks, method.id, selectedOption || undefined);
+      return balanceApi.createTopUp(
+        amountKopeks,
+        method.id,
+        selectedOption || undefined,
+        isTelegramWebApp,
+      );
     },
     onSuccess: (data) => {
       const redirectUrl = data.payment_url || data.invoice_url;
