@@ -717,6 +717,16 @@
     "paymentReady": "Payment link is ready",
     "clickToOpenPayment": "Click the button below to open the payment page in a new tab",
     "openPaymentPage": "Open payment page",
+    "receiptContact": {
+      "title": "Contact for YooKassa receipt",
+      "description": "YooKassa requires an email address or phone number for the receipt. Enter one to continue.",
+      "placeholder": "user@example.com or +79991234567",
+      "continue": "Continue",
+      "required": "Enter your email or phone number",
+      "invalid": "Enter a valid email or phone number",
+      "amountMissing": "Failed to restore the payment amount. Please try again.",
+      "emailInUse": "This email is already used by another user"
+    },
     "errors": {
       "noPaymentLink": "Server did not return a payment link",
       "starsOnlyInTelegram": "Stars payment is only available in Telegram Mini App",

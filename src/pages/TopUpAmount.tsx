@@ -15,6 +15,13 @@ import type { PaymentMethod } from '../types';
 import BentoCard from '../components/ui/BentoCard';
 import { saveTopUpPendingInfo } from '../utils/topUpStorage';
 
+const EMAIL_RE = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+const PHONE_RE = /^\+?[1-9]\d{1,14}$/;
+
+function normalizeReceiptPhone(phone: string): string {
+  return phone.replace(/[\s\-()]/g, '');
+}
+
 // Icons
 const StarIcon = () => (
   <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
@@ -142,6 +149,10 @@ export default function TopUpAmount() {
   const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [isInputFocused, setIsInputFocused] = useState(false);
+  const [showReceiptContactModal, setShowReceiptContactModal] = useState(false);
+  const [receiptContact, setReceiptContact] = useState('');
+  const [receiptContactError, setReceiptContactError] = useState<string | null>(null);
+  const [pendingTopUpAmountKopeks, setPendingTopUpAmountKopeks] = useState<number | null>(null);
 
   // If method not found in cache, redirect to method selection
   useEffect(() => {
@@ -195,15 +206,21 @@ export default function TopUpAmount() {
       expires_at: string | null;
     },
     unknown,
-    number
+    {
+      amountKopeks: number;
+      receiptEmail?: string;
+      receiptPhone?: string;
+    }
   >({
-    mutationFn: (amountKopeks: number) => {
+    mutationFn: ({ amountKopeks, receiptEmail, receiptPhone }) => {
       if (!method) throw new Error('Method not loaded');
       return balanceApi.createTopUp(
         amountKopeks,
         method.id,
         selectedOption || undefined,
         isTelegramWebApp,
+        receiptEmail,
+        receiptPhone,
       );
     },
     onSuccess: (data) => {
@@ -227,10 +244,48 @@ export default function TopUpAmount() {
       }
     },
     onError: (err: unknown) => {
-      const detail =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || '';
+      const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+      const detailCode =
+        typeof detail === 'object' && detail !== null && 'code' in detail
+          ? String((detail as { code?: string }).code || '')
+          : '';
+      const detailMessage =
+        typeof detail === 'string'
+          ? detail
+          : typeof detail === 'object' && detail !== null && 'message' in detail
+            ? String((detail as { message?: string }).message || '')
+            : '';
+
+      if (detailCode === 'yookassa_receipt_contact_required') {
+        setPendingTopUpAmountKopeks((prev) => prev ?? Math.round(convertToRub(parseFloat(amount || '0')) * 100));
+        setReceiptContactError(null);
+        setShowReceiptContactModal(true);
+        return;
+      }
+
+      if (detailCode === 'yookassa_receipt_contact_invalid') {
+        setReceiptContactError(
+          detailMessage || t('balance.receiptContact.invalid', { defaultValue: 'Invalid format' }),
+        );
+        setShowReceiptContactModal(true);
+        return;
+      }
+
+      if (detailCode === 'yookassa_receipt_contact_email_in_use') {
+        setReceiptContactError(
+          detailMessage ||
+            t('balance.receiptContact.emailInUse', {
+              defaultValue: 'This email is already used by another user',
+            }),
+        );
+        setShowReceiptContactModal(true);
+        return;
+      }
+
       setError(
-        detail.includes('not yet implemented') ? t('balance.useBot') : detail || t('common.error'),
+        detailMessage.includes('not yet implemented')
+          ? t('balance.useBot')
+          : detailMessage || t('common.error'),
       );
     },
   });
@@ -288,11 +343,60 @@ export default function TopUpAmount() {
     }
 
     const amountKopeks = Math.round(amountRubles * 100);
+    setPendingTopUpAmountKopeks(amountKopeks);
     if (isStarsMethod) {
       starsPaymentMutation.mutate(amountKopeks);
     } else {
-      topUpMutation.mutate(amountKopeks);
+      topUpMutation.mutate({ amountKopeks });
     }
+  };
+
+  const handleReceiptContactSubmit = () => {
+    const raw = receiptContact.trim();
+    if (!raw) {
+      setReceiptContactError(
+        t('balance.receiptContact.required', {
+          defaultValue: 'Enter your email or phone number',
+        }),
+      );
+      return;
+    }
+
+    let receiptEmail: string | undefined;
+    let receiptPhone: string | undefined;
+
+    if (EMAIL_RE.test(raw)) {
+      receiptEmail = raw.toLowerCase();
+    } else {
+      const normalizedPhone = normalizeReceiptPhone(raw);
+      if (PHONE_RE.test(normalizedPhone)) {
+        receiptPhone = normalizedPhone;
+      } else {
+        setReceiptContactError(
+          t('balance.receiptContact.invalid', {
+            defaultValue: 'Enter a valid email or phone number',
+          }),
+        );
+        return;
+      }
+    }
+
+    if (!pendingTopUpAmountKopeks) {
+      setReceiptContactError(
+        t('balance.receiptContact.amountMissing', {
+          defaultValue: 'Failed to restore the payment amount. Try again.',
+        }),
+      );
+      return;
+    }
+
+    setReceiptContactError(null);
+    topUpMutation.mutate({
+      amountKopeks: pendingTopUpAmountKopeks,
+      receiptEmail,
+      receiptPhone,
+    });
+    setShowReceiptContactModal(false);
   };
 
   const quickAmounts = [100, 300, 500, 1000].filter((a) => a >= minRubles && a <= maxRubles);
@@ -536,6 +640,70 @@ export default function TopUpAmount() {
             </button>
           </div>
         </motion.div>
+      )}
+
+      {showReceiptContactModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-3xl border border-dark-700/50 bg-dark-900/95 p-5 shadow-2xl shadow-black/40">
+            <div className="mb-4">
+              <h3 className="text-lg font-bold text-dark-100">
+                {t('balance.receiptContact.title', {
+                  defaultValue: 'Contact for YooKassa receipt',
+                })}
+              </h3>
+              <p className="mt-2 text-sm text-dark-400">
+                {t('balance.receiptContact.description', {
+                  defaultValue:
+                    'YooKassa requires an email address or phone number for the receipt. Enter one to continue.',
+                })}
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <input
+                type="text"
+                inputMode="email"
+                value={receiptContact}
+                onChange={(e) => {
+                  setReceiptContact(e.target.value);
+                  if (receiptContactError) setReceiptContactError(null);
+                }}
+                placeholder={t('balance.receiptContact.placeholder', {
+                  defaultValue: 'user@example.com or +79991234567',
+                })}
+                className="h-14 w-full rounded-2xl border border-dark-700/50 bg-dark-800/70 px-4 text-base text-dark-100 placeholder:text-dark-500 focus:border-accent-500/50 focus:outline-none"
+                autoFocus
+              />
+
+              {receiptContactError && (
+                <div className="rounded-xl border border-error-500/20 bg-error-500/10 p-3 text-sm text-error-400">
+                  {receiptContactError}
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowReceiptContactModal(false);
+                    setReceiptContactError(null);
+                  }}
+                  className="h-12 flex-1 rounded-2xl border border-dark-700/50 bg-dark-800/70 font-semibold text-dark-300 transition-colors hover:bg-dark-700/70"
+                >
+                  {t('common.cancel', { defaultValue: 'Cancel' })}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleReceiptContactSubmit}
+                  disabled={topUpMutation.isPending}
+                  className="h-12 flex-1 rounded-2xl bg-gradient-to-r from-accent-500 to-accent-600 font-semibold text-white transition-colors hover:from-accent-400 hover:to-accent-500 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {t('balance.receiptContact.continue', { defaultValue: 'Continue' })}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </motion.div>
   );

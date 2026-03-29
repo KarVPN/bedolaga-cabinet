@@ -745,6 +745,16 @@
     "paymentReady": "Ссылка на оплату готова",
     "clickToOpenPayment": "Нажмите кнопку ниже, чтобы открыть страницу оплаты в новой вкладке",
     "openPaymentPage": "Открыть страницу оплаты",
+    "receiptContact": {
+      "title": "Контакт для чека YooKassa",
+      "description": "YooKassa требует email или номер телефона для оформления чека. Введите один из них, чтобы продолжить оплату.",
+      "placeholder": "user@example.com или +79991234567",
+      "continue": "Продолжить",
+      "required": "Введите email или номер телефона",
+      "invalid": "Введите корректный email или номер телефона",
+      "amountMissing": "Не удалось восстановить сумму платежа. Попробуйте ещё раз.",
+      "emailInUse": "Этот email уже используется другим пользователем"
+    },
     "errors": {
       "noPaymentLink": "Сервер не вернул ссылку на оплату",
       "starsOnlyInTelegram": "Оплата Stars доступна только в Telegram Mini App",
