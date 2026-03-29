@@ -154,6 +154,29 @@ export interface RenewalOption {
   original_price_kopeks: number | null;
 }
 
+export interface TariffRenewalExtraSquad {
+  uuid: string;
+  name: string;
+  price_kopeks: number;
+  price_label: string;
+  enabled: boolean;
+}
+
+export interface TariffRenewalPreview {
+  final_total_kopeks: number;
+  final_total_label: string;
+  original_total_kopeks: number | null;
+  original_total_label: string | null;
+  base_price_kopeks: number;
+  devices_price_kopeks: number;
+  traffic_price_kopeks: number;
+  servers_price_kopeks: number;
+  offer_discount_percent: number;
+  extra_squads_total_kopeks: number;
+  extra_squads_total_label: string;
+  extra_squads: TariffRenewalExtraSquad[];
+}
+
 export interface TrafficPackage {
   gb: number;
   price_kopeks: number;

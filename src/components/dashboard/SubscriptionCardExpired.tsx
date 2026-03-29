@@ -61,6 +61,9 @@ export default function SubscriptionCardExpired({
       } else if (isDaily && subscription.tariff_id) {
         // Expired daily tariff — purchase for 1 day
         await subscriptionApi.purchaseTariff(subscription.tariff_id, 1);
+      } else if (subscription.tariff_id) {
+        navigate('/subscription/purchase');
+        return;
       } else {
         await subscriptionApi.renewSubscription(30);
       }

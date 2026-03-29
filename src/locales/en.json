@@ -379,6 +379,10 @@
       "period": "Period: {{label}}",
       "traffic": "Traffic: {{gb}} GB"
     },
+    "extraSquads": {
+      "keepTitle": "Keep additional servers",
+      "keepHint": "The amount changes depending on the toggles below"
+    },
     "total": "Total",
     "purchase": "Purchase",
     "step": "Step {{current}} of {{total}}",

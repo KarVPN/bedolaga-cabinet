@@ -9,6 +9,7 @@ import type {
   PurchaseSelection,
   PurchasePreview,
   AppConfig,
+  TariffRenewalPreview,
 } from '../types';
 
 export const subscriptionApi = {
@@ -24,6 +25,7 @@ export const subscriptionApi = {
 
   renewSubscription: async (
     periodDays: number,
+    selectedExtraSquads?: string[],
   ): Promise<{
     message: string;
     new_end_date: string;
@@ -31,6 +33,7 @@ export const subscriptionApi = {
   }> => {
     const response = await apiClient.post('/cabinet/subscription/renew', {
       period_days: periodDays,
+      selected_extra_squads: selectedExtraSquads,
     });
     return response.data;
   },
@@ -188,6 +191,7 @@ export const subscriptionApi = {
     tariffId: number,
     periodDays: number,
     trafficGb?: number,
+    selectedExtraSquads?: string[],
   ): Promise<{
     success: boolean;
     message: string;
@@ -201,7 +205,26 @@ export const subscriptionApi = {
       tariff_id: tariffId,
       period_days: periodDays,
       traffic_gb: trafficGb,
+      selected_extra_squads: selectedExtraSquads,
     });
+    return response.data;
+  },
+
+  previewTariffRenewal: async (
+    tariffId: number,
+    periodDays: number,
+    trafficGb?: number,
+    selectedExtraSquads?: string[],
+  ): Promise<TariffRenewalPreview> => {
+    const response = await apiClient.post<TariffRenewalPreview>(
+      '/cabinet/subscription/tariff-renewal-preview',
+      {
+        tariff_id: tariffId,
+        period_days: periodDays,
+        traffic_gb: trafficGb,
+        selected_extra_squads: selectedExtraSquads,
+      },
+    );
     return response.data;
   },
 
@@ -221,6 +244,7 @@ export const subscriptionApi = {
       price_rubles: number;
       is_available: boolean;
       is_connected: boolean;
+      is_included_in_tariff: boolean;
       has_discount: boolean;
       discount_percent: number;
     }>;

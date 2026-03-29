@@ -217,8 +217,6 @@ export default function Subscription() {
     refetchOnMount: 'always',
   });
 
-  const isTariffsMode = purchaseOptions?.sales_mode === 'tariffs';
-
   const autopayMutation = useMutation({
     mutationFn: (enabled: boolean) => subscriptionApi.updateAutopay(enabled),
     onSuccess: () => {
@@ -1760,38 +1758,37 @@ export default function Subscription() {
               </div>
             )}
 
-            {/* Server Management - only in classic mode */}
-            {!isTariffsMode && (
-              <div className="mt-4">
-                {!showServerManagement ? (
-                  <button
-                    onClick={() => setShowServerManagement(true)}
-                    className={`w-full rounded-xl border p-4 text-left transition-colors ${isDark ? 'border-dark-700/50 bg-dark-800/50 hover:border-dark-600' : 'border-champagne-300/60 bg-champagne-200/40 hover:border-champagne-400'}`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-medium text-dark-100">
-                          {t('subscription.additionalOptions.manageServers')}
-                        </div>
-                        <div className="mt-1 text-sm text-dark-400">
-                          {t('subscription.servers', { count: subscription.servers?.length || 0 })}
-                        </div>
+            {/* Server Management */}
+            <div className="mt-4">
+              {!showServerManagement ? (
+                <button
+                  onClick={() => setShowServerManagement(true)}
+                  className={`w-full rounded-xl border p-4 text-left transition-colors ${isDark ? 'border-dark-700/50 bg-dark-800/50 hover:border-dark-600' : 'border-champagne-300/60 bg-champagne-200/40 hover:border-champagne-400'}`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-medium text-dark-100">
+                        {t('subscription.additionalOptions.manageServers')}
                       </div>
-                      <svg
-                        className="h-5 w-5 text-dark-400"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                        strokeWidth={2}
-                      >
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                      </svg>
+                      <div className="mt-1 text-sm text-dark-400">
+                        {t('subscription.servers', { count: subscription.servers?.length || 0 })}
+                      </div>
                     </div>
-                  </button>
-                ) : (
-                  <div
-                    className={`rounded-xl border p-5 ${isDark ? 'border-dark-700/50 bg-dark-800/50' : 'border-champagne-300/60 bg-champagne-200/40'}`}
-                  >
+                    <svg
+                      className="h-5 w-5 text-dark-400"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                  </div>
+                </button>
+              ) : (
+                <div
+                  className={`rounded-xl border p-5 ${isDark ? 'border-dark-700/50 bg-dark-800/50' : 'border-champagne-300/60 bg-champagne-200/40'}`}
+                >
                     <div className="mb-4 flex items-center justify-between">
                       <h3 className="font-medium text-dark-100">
                         {t('subscription.additionalOptions.manageServersTitle')}
@@ -1833,14 +1830,17 @@ export default function Subscription() {
                             .filter((country) => country.is_available || country.is_connected)
                             .map((country) => {
                               const isCurrentlyConnected = country.is_connected;
+                              const isIncludedInTariff = country.is_included_in_tariff;
                               const isSelected = selectedServersToUpdate.includes(country.uuid);
                               const willBeAdded = !isCurrentlyConnected && isSelected;
-                              const willBeRemoved = isCurrentlyConnected && !isSelected;
+                              const willBeRemoved =
+                                isCurrentlyConnected && !isSelected && !isIncludedInTariff;
 
                               return (
                                 <button
                                   key={country.uuid}
                                   onClick={() => {
+                                    if (isIncludedInTariff) return;
                                     if (isSelected) {
                                       setSelectedServersToUpdate((prev) =>
                                         prev.filter((u) => u !== country.uuid),
@@ -1849,10 +1849,14 @@ export default function Subscription() {
                                       setSelectedServersToUpdate((prev) => [...prev, country.uuid]);
                                     }
                                   }}
-                                  disabled={!country.is_available && !isCurrentlyConnected}
+                                  disabled={
+                                    isIncludedInTariff || (!country.is_available && !isCurrentlyConnected)
+                                  }
                                   className={`flex w-full items-center justify-between rounded-xl border p-3 text-left transition-all ${
                                     isSelected
-                                      ? willBeAdded
+                                      ? isIncludedInTariff
+                                        ? 'border-accent-500/60 bg-accent-500/10'
+                                        : willBeAdded
                                         ? 'border-success-500 bg-success-500/10'
                                         : 'border-accent-500 bg-accent-500/10'
                                       : willBeRemoved
@@ -1860,11 +1864,13 @@ export default function Subscription() {
                                         : isDark
                                           ? 'border-dark-700/50 bg-dark-800/50 hover:border-dark-600'
                                           : 'border-champagne-300/60 bg-champagne-200/40 hover:border-champagne-400'
-                                  } ${!country.is_available && !isCurrentlyConnected ? 'cursor-not-allowed opacity-50' : ''}`}
+                                  } ${isIncludedInTariff || (!country.is_available && !isCurrentlyConnected) ? 'cursor-not-allowed opacity-50' : ''}`}
                                 >
                                   <div className="flex items-center gap-3">
                                     <span className="text-lg">
-                                      {willBeAdded
+                                      {isIncludedInTariff
+                                        ? '🔒'
+                                        : willBeAdded
                                         ? '➕'
                                         : willBeRemoved
                                           ? '➖'
@@ -1875,6 +1881,14 @@ export default function Subscription() {
                                     <div>
                                       <div className="flex items-center gap-2 font-medium text-dark-100">
                                         {country.name}
+                                        {isIncludedInTariff && (
+                                          <span className="rounded bg-accent-500/20 px-1.5 py-0.5 text-xs text-accent-300">
+                                            {t(
+                                              'subscription.serverManagement.includedInTariff',
+                                              'Included in tariff',
+                                            )}
+                                          </span>
+                                        )}
                                         {country.has_discount && !isCurrentlyConnected && (
                                           <span className="rounded bg-success-500/20 px-1.5 py-0.5 text-xs text-success-400">
                                             -{country.discount_percent}%
@@ -1900,7 +1914,7 @@ export default function Subscription() {
                                           )}
                                         </div>
                                       )}
-                                      {!willBeAdded && !isCurrentlyConnected && (
+                                      {!isIncludedInTariff && !willBeAdded && !isCurrentlyConnected && (
                                         <div className="text-xs text-dark-500">
                                           {formatPrice(country.price_per_month_kopeks)}
                                           {t('subscription.serverManagement.perMonth')}
@@ -1911,9 +1925,19 @@ export default function Subscription() {
                                           )}
                                         </div>
                                       )}
-                                      {!country.is_available && !isCurrentlyConnected && (
+                                      {!isIncludedInTariff &&
+                                        !country.is_available &&
+                                        !isCurrentlyConnected && (
                                         <div className="text-xs text-dark-500">
                                           {t('subscription.serverManagement.unavailable')}
+                                        </div>
+                                        )}
+                                      {isIncludedInTariff && (
+                                        <div className="text-xs text-dark-500">
+                                          {t(
+                                            'subscription.serverManagement.includedInTariffHint',
+                                            'Base server from your current tariff',
+                                          )}
                                         </div>
                                       )}
                                     </div>
@@ -2037,10 +2061,9 @@ export default function Subscription() {
                         {t('subscription.serverManagement.noServersAvailable')}
                       </div>
                     )}
-                  </div>
-                )}
-              </div>
-            )}
+                </div>
+              )}
+            </div>
           </div>
         )}
 

@@ -128,6 +128,9 @@ export default function SubscriptionPurchase() {
   const [customTrafficGb, setCustomTrafficGb] = useState<number>(50);
   const [useCustomDays, setUseCustomDays] = useState(false);
   const [useCustomTraffic, setUseCustomTraffic] = useState(false);
+  const [selectedRenewalExtraSquads, setSelectedRenewalExtraSquads] = useState<string[] | null>(
+    null,
+  );
 
   // Refs for auto-scroll
   const switchModalRef = useRef<HTMLDivElement>(null);
@@ -286,13 +289,58 @@ export default function SubscriptionPurchase() {
           : selectedTariffPeriod?.days || 30;
       const trafficGb =
         useCustomTraffic && selectedTariff.custom_traffic_enabled ? customTrafficGb : undefined;
-      return subscriptionApi.purchaseTariff(selectedTariff.id, days, trafficGb);
+      return subscriptionApi.purchaseTariff(
+        selectedTariff.id,
+        days,
+        trafficGb,
+        subscription?.tariff_id === selectedTariff.id
+          ? (selectedRenewalExtraSquads ??
+              tariffRenewalPreview?.extra_squads
+                .filter((item) => item.enabled)
+                .map((item) => item.uuid))
+          : undefined,
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['subscription'] });
       queryClient.invalidateQueries({ queryKey: ['purchase-options'] });
       navigate('/subscription', { replace: true });
     },
+  });
+
+  const tariffPurchaseDays =
+    selectedTariff &&
+    (selectedTariff.is_daily ||
+      (selectedTariff.daily_price_kopeks && selectedTariff.daily_price_kopeks > 0))
+      ? 1
+      : useCustomDays
+        ? customDays
+        : selectedTariffPeriod?.days || null;
+  const tariffPurchaseTrafficGb =
+    useCustomTraffic && selectedTariff?.custom_traffic_enabled ? customTrafficGb : undefined;
+  const isSameTariffRenewal = !!selectedTariff && subscription?.tariff_id === selectedTariff.id;
+
+  const { data: tariffRenewalPreview, isLoading: tariffRenewalPreviewLoading } = useQuery({
+    queryKey: [
+      'tariff-renewal-preview',
+      selectedTariff?.id ?? null,
+      tariffPurchaseDays,
+      tariffPurchaseTrafficGb ?? null,
+      selectedRenewalExtraSquads,
+    ],
+    queryFn: () =>
+      subscriptionApi.previewTariffRenewal(
+        selectedTariff!.id,
+        tariffPurchaseDays!,
+        tariffPurchaseTrafficGb,
+        selectedRenewalExtraSquads ?? undefined,
+      ),
+    enabled:
+      !!selectedTariff &&
+      !!tariffPurchaseDays &&
+      showTariffPurchase &&
+      isSameTariffRenewal &&
+      !selectedTariff.is_daily,
   });
 
   // Auto-scroll effects
@@ -313,6 +361,10 @@ export default function SubscriptionPurchase() {
       return () => clearTimeout(timer);
     }
   }, [showTariffPurchase]);
+
+  useEffect(() => {
+    setSelectedRenewalExtraSquads(null);
+  }, [selectedTariff?.id, selectedTariffPeriod?.days, customDays, customTrafficGb, useCustomDays, useCustomTraffic]);
 
   // Classic mode helpers
   const toggleServer = (uuid: string) => {
@@ -1432,10 +1484,25 @@ export default function SubscriptionPurchase() {
                               ? customTrafficGb * (selectedTariff.traffic_price_per_gb_kopeks ?? 0)
                               : 0;
 
-                          const totalPrice = promoPeriod.price + trafficPrice;
-                          const originalTotal = promoPeriod.original
+                          const totalPrice =
+                            isSameTariffRenewal && tariffRenewalPreview
+                              ? tariffRenewalPreview.final_total_kopeks
+                              : promoPeriod.price + trafficPrice;
+                          const originalTotal =
+                            isSameTariffRenewal && tariffRenewalPreview
+                              ? tariffRenewalPreview.original_total_kopeks
+                              : promoPeriod.original
                             ? promoPeriod.original + trafficPrice
                             : null;
+                          const renewalExtraItems = tariffRenewalPreview?.extra_squads ?? [];
+                          const effectiveSelectedExtraSquads =
+                            selectedRenewalExtraSquads ??
+                            renewalExtraItems.filter((item) => item.enabled).map((item) => item.uuid);
+                          const allExtraEnabled =
+                            renewalExtraItems.length > 0 &&
+                            renewalExtraItems.every((item) =>
+                              effectiveSelectedExtraSquads.includes(item.uuid),
+                            );
 
                           return (
                             <>
@@ -1515,6 +1582,96 @@ export default function SubscriptionPurchase() {
                                     <span>+{formatPrice(trafficPrice)}</span>
                                   </div>
                                 )}
+                                {isSameTariffRenewal && renewalExtraItems.length > 0 && (
+                                  <div className="rounded-xl border border-dark-700/50 bg-dark-900/40 p-3">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setSelectedRenewalExtraSquads(
+                                          allExtraEnabled
+                                            ? []
+                                            : renewalExtraItems.map((item) => item.uuid),
+                                        )
+                                      }
+                                      className="flex w-full items-center justify-between gap-3 text-left"
+                                    >
+                                      <div>
+                                        <div className="font-medium text-dark-100">
+                                          {t(
+                                            'subscription.extraSquads.keepTitle',
+                                            'Keep additional servers',
+                                          )}{' '}
+                                          <span className="text-accent-400">
+                                            +{tariffRenewalPreview?.extra_squads_total_label}
+                                          </span>
+                                        </div>
+                                        <div className="mt-1 text-xs text-dark-500">
+                                          {t(
+                                            'subscription.extraSquads.keepHint',
+                                            'The amount changes depending on the toggles below',
+                                          )}
+                                        </div>
+                                      </div>
+                                      <div
+                                        className={`relative h-6 w-10 rounded-full transition-colors ${
+                                          allExtraEnabled ? 'bg-accent-500' : 'bg-dark-600'
+                                        }`}
+                                      >
+                                        <span
+                                          className={`absolute top-1 h-4 w-4 rounded-full bg-white transition-transform ${
+                                            allExtraEnabled ? 'left-5' : 'left-1'
+                                          }`}
+                                        />
+                                      </div>
+                                    </button>
+                                    <div className="mt-3 space-y-2">
+                                      {renewalExtraItems.map((item) => {
+                                        const enabled = effectiveSelectedExtraSquads.includes(
+                                          item.uuid,
+                                        );
+                                        return (
+                                          <div
+                                            key={item.uuid}
+                                            className="flex items-center justify-between gap-3 text-sm"
+                                          >
+                                            <div className="min-w-0">
+                                              <div className="truncate text-dark-200">
+                                                {item.name}
+                                              </div>
+                                              <div className="text-xs text-dark-500">
+                                                +{item.price_label}
+                                              </div>
+                                            </div>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                setSelectedRenewalExtraSquads((prev) => {
+                                                  const current =
+                                                    prev ??
+                                                    renewalExtraItems
+                                                      .filter((entry) => entry.enabled)
+                                                      .map((entry) => entry.uuid);
+                                                  return current.includes(item.uuid)
+                                                    ? current.filter((uuid) => uuid !== item.uuid)
+                                                    : [...current, item.uuid];
+                                                })
+                                              }
+                                              className={`relative h-6 w-10 flex-shrink-0 rounded-full transition-colors ${
+                                                enabled ? 'bg-accent-500' : 'bg-dark-600'
+                                              }`}
+                                            >
+                                              <span
+                                                className={`absolute top-1 h-4 w-4 rounded-full bg-white transition-transform ${
+                                                  enabled ? 'left-5' : 'left-1'
+                                                }`}
+                                              />
+                                            </button>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                )}
                               </div>
 
                               {promoPeriod.percent && (
@@ -1530,9 +1687,13 @@ export default function SubscriptionPurchase() {
                                   {t('subscription.total')}
                                 </span>
                                 <div className="text-right">
-                                  <span className="text-2xl font-bold text-accent-400">
-                                    {formatPrice(totalPrice)}
-                                  </span>
+                                  {tariffRenewalPreviewLoading ? (
+                                    <span className="inline-block h-7 w-7 animate-spin rounded-full border-2 border-accent-500 border-t-transparent align-middle" />
+                                  ) : (
+                                    <span className="text-2xl font-bold text-accent-400">
+                                      {formatPrice(totalPrice)}
+                                    </span>
+                                  )}
                                   {originalTotal && (
                                     <div className="text-sm text-dark-500 line-through">
                                       {formatPrice(originalTotal)}
@@ -1543,7 +1704,7 @@ export default function SubscriptionPurchase() {
 
                               <button
                                 onClick={() => tariffPurchaseMutation.mutate()}
-                                disabled={tariffPurchaseMutation.isPending}
+                                disabled={tariffPurchaseMutation.isPending || tariffRenewalPreviewLoading}
                                 className="btn-primary w-full py-3"
                               >
                                 {tariffPurchaseMutation.isPending ? (
