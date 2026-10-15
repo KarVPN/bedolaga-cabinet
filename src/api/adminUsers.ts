@@ -34,6 +34,7 @@ export interface UserPromoGroupInfo {
 }
 
 export interface UserListItem {
+  estimated_date_subscription_ids?: number[];
   id: number;
   telegram_id: number;
   username: string | null;
@@ -388,6 +389,11 @@ export const adminUsersApi = {
       search?: string;
       email?: string;
       status?: 'active' | 'blocked' | 'deleted';
+      subscription_on_date?: string;
+      subscription_status?: string;
+      has_subscription?: boolean;
+      has_restrictions?: boolean;
+      expires_within_days?: number;
       sort_by?:
         | 'created_at'
         | 'balance'

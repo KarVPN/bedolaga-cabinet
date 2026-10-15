@@ -1,4 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { UserBulkActions } from '../components/admin/UserBulkActions';
+import type { BulkFilters, BulkOperation } from '../api/userBulkOperations';
+import { usePermissionStore } from '../store/permissions';
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useCurrency } from '../hooks/useCurrency';
@@ -101,15 +104,28 @@ interface UserRowProps {
   user: UserListItem;
   onClick: () => void;
   formatAmount: (rubAmount: number) => string;
+  checked: boolean;
+  selectable: boolean;
+  onSelect: () => void;
 }
 
-function UserRow({ user, onClick, formatAmount }: UserRowProps) {
+function UserRow({ user, onClick, formatAmount, checked, selectable, onSelect }: UserRowProps) {
   const { t } = useTranslation();
   return (
     <div
       onClick={onClick}
       className="flex cursor-pointer items-start gap-3 rounded-xl border border-dark-700 bg-dark-800/50 p-3 transition-all hover:border-dark-600 hover:bg-dark-800 sm:items-center sm:gap-4 sm:p-4"
     >
+      {selectable && (
+        <input
+          type="checkbox"
+          aria-label={`Выбрать ${user.full_name}`}
+          checked={checked}
+          onClick={(event) => event.stopPropagation()}
+          onChange={onSelect}
+          className="mt-2 h-4 w-4 shrink-0 accent-accent-500"
+        />
+      )}
       {/* Avatar */}
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-accent-500 to-accent-700 text-sm font-medium text-white sm:text-base">
         {user.first_name?.[0] || user.username?.[0] || '?'}
@@ -125,6 +141,12 @@ function UserRow({ user, onClick, formatAmount }: UserRowProps) {
           )}
         </div>
 
+        {!!user.estimated_date_subscription_ids?.length && (
+          <p className="mb-1 text-xs text-warning-400">
+            По текущим срокам подходят подписки:{' '}
+            {user.estimated_date_subscription_ids.map((id) => `#${id}`).join(', ')}
+          </p>
+        )}
         {/* Telegram ID - full width on mobile */}
         <div className="mb-1 flex items-center gap-1 text-xs text-dark-400 sm:mb-0">
           <TelegramIcon />
@@ -181,6 +203,7 @@ export default function AdminUsers() {
   const navigate = useNavigate();
   const { capabilities } = usePlatform();
 
+  const canBulk = usePermissionStore((state) => state.hasPermission('bulk_actions:execute'));
   const [users, setUsers] = useState<UserListItem[]>([]);
   const [stats, setStats] = useState<UsersStatsResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -191,12 +214,62 @@ export default function AdminUsers() {
   const [offset, setOffset] = useState(0);
   const [total, setTotal] = useState(0);
 
+  const [subscriptionDate, setSubscriptionDate] = useState('');
+  const [subscriptionStatus, setSubscriptionStatus] = useState('');
+  const [expiresDays, setExpiresDays] = useState('');
+  const [hasSubscription, setHasSubscription] = useState('');
+  const [restricted, setRestricted] = useState(false);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [allSelection, setAllSelection] = useState<BulkOperation | null>(null);
+  const pageCheckbox = useRef<HTMLInputElement>(null);
+  const requestSequence = useRef(0);
+  const filters = useMemo<BulkFilters>(
+    () => ({
+      ...(search ? { search } : {}),
+      ...(emailSearch ? { email: emailSearch } : {}),
+      ...(statusFilter ? { status: statusFilter as BulkFilters['status'] } : {}),
+      ...(subscriptionDate ? { subscription_on_date: subscriptionDate } : {}),
+      ...(subscriptionStatus
+        ? { subscription_status: subscriptionStatus as BulkFilters['subscription_status'] }
+        : {}),
+      ...(expiresDays ? { expires_within_days: Number(expiresDays) } : {}),
+      ...(hasSubscription ? { has_subscription: hasSubscription === 'yes' } : {}),
+      ...(restricted ? { has_restrictions: true } : {}),
+    }),
+    [
+      search,
+      emailSearch,
+      statusFilter,
+      subscriptionDate,
+      subscriptionStatus,
+      expiresDays,
+      hasSubscription,
+      restricted,
+    ],
+  );
+  const filterKey = JSON.stringify({ ...filters, sort_by: sortBy });
+  const clearSelection = () => {
+    setSelected(new Set());
+    setAllSelection(null);
+  };
+  useEffect(() => {
+    setSelected(new Set());
+    setAllSelection(null);
+    setOffset(0);
+  }, [filterKey]);
+  const pageSelected = users.filter((user) => allSelection || selected.has(user.id)).length;
+  useEffect(() => {
+    if (pageCheckbox.current)
+      pageCheckbox.current.indeterminate = pageSelected > 0 && pageSelected < users.length;
+  }, [pageSelected, users.length]);
+
   const limit = 20;
 
   const loadUsers = useCallback(async () => {
+    const sequence = ++requestSequence.current;
     try {
       setLoading(true);
-      const params: Record<string, unknown> = { offset, limit, sort_by: sortBy };
+      const params: Record<string, unknown> = { offset, limit, sort_by: sortBy, ...filters };
       if (search) params.search = search;
       if (emailSearch) params.email = emailSearch;
       if (statusFilter) params.status = statusFilter;
@@ -204,14 +277,15 @@ export default function AdminUsers() {
       const data = await adminUsersApi.getUsers(
         params as Parameters<typeof adminUsersApi.getUsers>[0],
       );
+      if (sequence !== requestSequence.current) return;
       setUsers(data.users);
       setTotal(data.total);
     } catch (error) {
       console.error('Failed to load users:', error);
     } finally {
-      setLoading(false);
+      if (sequence === requestSequence.current) setLoading(false);
     }
-  }, [offset, search, emailSearch, statusFilter, sortBy]);
+  }, [offset, search, emailSearch, statusFilter, sortBy, filters]);
 
   const loadStats = useCallback(async () => {
     try {
@@ -268,6 +342,16 @@ export default function AdminUsers() {
           <RefreshIcon className={loading ? 'animate-spin' : ''} />
         </button>
       </div>
+
+      <UserBulkActions
+        selected={selected}
+        filters={filters}
+        total={total}
+        allSelection={allSelection}
+        onSelectAll={setAllSelection}
+        onClear={clearSelection}
+        filterKey={filterKey}
+      />
 
       {/* Stats */}
       {stats && (
@@ -360,6 +444,102 @@ export default function AdminUsers() {
         </div>
       </div>
 
+      <details className="mb-4 rounded-xl border border-dark-700 bg-dark-800/50 p-4">
+        <summary className="cursor-pointer font-medium">Расширенные фильтры</summary>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <label className="text-sm">
+            Подписка пересекала дату (по текущим срокам)
+            <input
+              aria-label="Дата подписки"
+              type="date"
+              value={subscriptionDate}
+              onChange={(event) => setSubscriptionDate(event.target.value)}
+              className="mt-1 block w-full rounded-lg bg-dark-800 p-2"
+            />
+          </label>
+          <label className="text-sm">
+            Статус подписки
+            <select
+              className="mt-1 block w-full rounded-lg bg-dark-800 p-2"
+              value={subscriptionStatus}
+              onChange={(event) => setSubscriptionStatus(event.target.value)}
+            >
+              <option value="">Любой</option>
+              <option value="active">Активная</option>
+              <option value="trial">Пробная</option>
+              <option value="expired">Истекшая</option>
+              <option value="disabled">Отключённая</option>
+              <option value="limited">Лимит трафика</option>
+            </select>
+          </label>
+          <label className="text-sm">
+            Наличие подписки
+            <select
+              className="mt-1 block w-full rounded-lg bg-dark-800 p-2"
+              value={hasSubscription}
+              onChange={(event) => setHasSubscription(event.target.value)}
+            >
+              <option value="">Любое</option>
+              <option value="yes">Есть подписка</option>
+              <option value="no">Нет подписки</option>
+            </select>
+          </label>
+          <label className="text-sm">
+            Истекает в ближайшие дни
+            <select
+              className="mt-1 block w-full rounded-lg bg-dark-800 p-2"
+              value={expiresDays}
+              onChange={(event) => setExpiresDays(event.target.value)}
+            >
+              <option value="">Любой срок</option>
+              <option value="7">7 дней</option>
+              <option value="14">14 дней</option>
+              <option value="30">30 дней</option>
+            </select>
+          </label>
+          <label className="text-sm">
+            <input
+              className="mr-2 accent-accent-500"
+              type="checkbox"
+              checked={restricted}
+              onChange={(event) => setRestricted(event.target.checked)}
+            />
+            Есть ограничения
+          </label>
+        </div>
+        <p className="mt-3 text-xs text-warning-400">
+          Дата означает пересечение хотя бы части календарного дня в часовой зоне приложения.
+          История неполна: фильтр использует текущие start_date / end_date и не подтверждает
+          фактическую активность в прошлом. Продления, отмены и восстановление бэкапа могли изменить
+          эти даты.
+        </p>
+        <p className="mt-2 text-xs text-dark-400">
+          Изменение фильтров или сортировки сбрасывает выбор пользователей.
+        </p>
+      </details>
+      {canBulk && (
+        <label className="mb-3 flex items-center gap-2 text-sm text-dark-300">
+          <input
+            ref={pageCheckbox}
+            type="checkbox"
+            checked={users.length > 0 && pageSelected === users.length}
+            disabled={loading || users.length === 0}
+            onChange={(event) => {
+              setAllSelection(null);
+              setSelected((previous) => {
+                const next = new Set(previous);
+                users.forEach((user) => {
+                  if (event.target.checked) next.add(user.id);
+                  else next.delete(user.id);
+                });
+                return next;
+              });
+            }}
+            className="h-4 w-4 accent-accent-500"
+          />
+          Выбрать всех на этой странице
+        </label>
+      )}
       {/* Users list */}
       <div className="mb-4 space-y-2">
         {loading ? (
@@ -373,6 +553,17 @@ export default function AdminUsers() {
             <UserRow
               key={user.id}
               user={user}
+              selectable={canBulk}
+              checked={!!allSelection || selected.has(user.id)}
+              onSelect={() => {
+                setAllSelection(null);
+                setSelected((previous) => {
+                  const next = new Set(previous);
+                  if (next.has(user.id)) next.delete(user.id);
+                  else next.add(user.id);
+                  return next;
+                });
+              }}
               onClick={() => navigate(`/admin/users/${user.id}`)}
               formatAmount={(amount) => formatWithCurrency(amount)}
             />
