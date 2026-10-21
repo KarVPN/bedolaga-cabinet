@@ -1,4 +1,5 @@
 import apiClient from './client';
+import { getYandexCid } from '../utils/yandexCid';
 import type {
   AuthResponse,
   LinkCallbackResponse,
@@ -10,6 +11,7 @@ import type {
   ServerCompleteResponse,
   TokenResponse,
   User,
+  UserAvatarResponse,
 } from '../types';
 
 export const authApi = {
@@ -17,11 +19,14 @@ export const authApi = {
     initData: string,
     campaignSlug?: string | null,
     referralCode?: string | null,
+    acceptedLegalDocuments?: string[],
   ): Promise<AuthResponse> => {
     const response = await apiClient.post<AuthResponse>('/cabinet/auth/telegram', {
       init_data: initData,
       campaign_slug: campaignSlug || undefined,
       referral_code: referralCode || undefined,
+      yandex_cid: getYandexCid() || undefined,
+      accepted_legal_documents: acceptedLegalDocuments,
     });
     return response.data;
   },
@@ -38,11 +43,14 @@ export const authApi = {
     },
     campaignSlug?: string | null,
     referralCode?: string | null,
+    acceptedLegalDocuments?: string[],
   ): Promise<AuthResponse> => {
     const response = await apiClient.post<AuthResponse>('/cabinet/auth/telegram/widget', {
       ...data,
       campaign_slug: campaignSlug || undefined,
       referral_code: referralCode || undefined,
+      yandex_cid: getYandexCid() || undefined,
+      accepted_legal_documents: acceptedLegalDocuments,
     });
     return response.data;
   },
@@ -51,11 +59,14 @@ export const authApi = {
     idToken: string,
     campaignSlug?: string | null,
     referralCode?: string | null,
+    acceptedLegalDocuments?: string[],
   ): Promise<AuthResponse> => {
     const response = await apiClient.post<AuthResponse>('/cabinet/auth/telegram/oidc', {
       id_token: idToken,
       campaign_slug: campaignSlug || undefined,
       referral_code: referralCode || undefined,
+      yandex_cid: getYandexCid() || undefined,
+      accepted_legal_documents: acceptedLegalDocuments,
     });
     return response.data;
   },
@@ -71,6 +82,7 @@ export const authApi = {
       password,
       campaign_slug: campaignSlug || undefined,
       referral_code: referralCode || undefined,
+      yandex_cid: getYandexCid() || undefined,
     });
     return response.data;
   },
@@ -78,11 +90,28 @@ export const authApi = {
   registerEmail: async (
     email: string,
     password: string,
-  ): Promise<{ message: string; email: string }> => {
+  ): Promise<{
+    message: string;
+    email?: string;
+    merge_required?: boolean;
+    // 'email_code' means the email belongs to another account: a confirmation
+    // code was mailed to it and must be verified before a merge token is issued.
+    merge_verification?: 'email_code';
+    merge_token?: string | null;
+  }> => {
     const response = await apiClient.post('/cabinet/auth/email/register', {
       email,
       password,
+      yandex_cid: getYandexCid() || undefined,
     });
+    return response.data;
+  },
+
+  // Confirm an email account merge with the code sent to the existing account.
+  verifyEmailMerge: async (
+    code: string,
+  ): Promise<{ message: string; merge_required?: boolean; merge_token?: string }> => {
+    const response = await apiClient.post('/cabinet/auth/email/merge/verify', { code });
     return response.data;
   },
 
@@ -92,10 +121,12 @@ export const authApi = {
     first_name?: string;
     language?: string;
     referral_code?: string;
+    campaign_slug?: string;
+    accepted_legal_documents?: string[];
   }): Promise<RegisterResponse> => {
     const response = await apiClient.post<RegisterResponse>(
       '/cabinet/auth/email/register/standalone',
-      data,
+      { ...data, yandex_cid: getYandexCid() || undefined },
     );
     return response.data;
   },
@@ -110,6 +141,18 @@ export const authApi = {
 
   resendVerification: async (): Promise<{ message: string }> => {
     const response = await apiClient.post('/cabinet/auth/email/resend');
+    return response.data;
+  },
+
+  /**
+   * Повторная отправка письма с экрана «Проверьте почту» — до входа в аккаунт.
+   *
+   * Отдельная ручка от resendVerification: та требует токен, которого у только
+   * что зарегистрировавшегося ещё нет. Ответ одинаковый для любого адреса,
+   * поэтому по нему нельзя судить, существует ли аккаунт.
+   */
+  resendVerificationPublic: async (email: string): Promise<{ message: string }> => {
+    const response = await apiClient.post('/cabinet/auth/email/register/resend', { email });
     return response.data;
   },
 
@@ -141,6 +184,12 @@ export const authApi = {
 
   getMe: async (): Promise<User> => {
     const response = await apiClient.get<User>('/cabinet/auth/me');
+    return response.data;
+  },
+
+  // Фото профиля Telegram, которое бот берёт у Telegram сам (initData несёт его не всегда).
+  getMyAvatar: async (): Promise<UserAvatarResponse> => {
+    const response = await apiClient.get<UserAvatarResponse>('/cabinet/auth/me/avatar');
     return response.data;
   },
 
@@ -192,6 +241,7 @@ export const authApi = {
         device_id: deviceId || undefined,
         campaign_slug: campaignSlug || undefined,
         referral_code: referralCode || undefined,
+        yandex_cid: getYandexCid() || undefined,
       },
     );
     return response.data;

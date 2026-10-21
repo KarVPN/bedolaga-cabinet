@@ -7,7 +7,7 @@ import { useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
-import { useWebSocket, WSMessage } from '../hooks/useWebSocket';
+import { useWebSocket, type WSMessage } from '../hooks/useWebSocket';
 import { useToast } from './Toast';
 import { useAuthStore } from '../store/auth';
 import { useCurrency } from '../hooks/useCurrency';
@@ -82,7 +82,11 @@ export default function WebSocketNotifications() {
           expiresAt: message.expires_at,
           tariffName: message.tariff_name,
         });
-        queryClient.invalidateQueries({ queryKey: ['subscription'] });
+        queryClient.invalidateQueries({
+          predicate: (query) =>
+            Array.isArray(query.queryKey) && query.queryKey[0] === 'subscription',
+        });
+        queryClient.invalidateQueries({ queryKey: ['subscriptions-list'] });
         queryClient.invalidateQueries({ queryKey: ['balance'] });
         queryClient.invalidateQueries({ queryKey: ['purchase-options'] });
         refreshUser();
@@ -96,7 +100,11 @@ export default function WebSocketNotifications() {
           amountKopeks: message.amount_kopeks,
           expiresAt: message.new_expires_at,
         });
-        queryClient.invalidateQueries({ queryKey: ['subscription'] });
+        queryClient.invalidateQueries({
+          predicate: (query) =>
+            Array.isArray(query.queryKey) && query.queryKey[0] === 'subscription',
+        });
+        queryClient.invalidateQueries({ queryKey: ['subscriptions-list'] });
         queryClient.invalidateQueries({ queryKey: ['balance'] });
         queryClient.invalidateQueries({ queryKey: ['purchase-options'] });
         refreshUser();
@@ -115,7 +123,7 @@ export default function WebSocketNotifications() {
             },
           ),
           icon: <span className="text-lg">⏰</span>,
-          onClick: () => navigate('/subscription'),
+          onClick: () => navigate('/subscriptions'),
           duration: 10000,
         });
         return;
@@ -130,10 +138,14 @@ export default function WebSocketNotifications() {
             'Your subscription has expired. Renew to continue using the service.',
           ),
           icon: <span className="text-lg">😢</span>,
-          onClick: () => navigate('/subscription'),
+          onClick: () => navigate('/subscriptions'),
           duration: 10000,
         });
-        queryClient.invalidateQueries({ queryKey: ['subscription'] });
+        queryClient.invalidateQueries({
+          predicate: (query) =>
+            Array.isArray(query.queryKey) && query.queryKey[0] === 'subscription',
+        });
+        queryClient.invalidateQueries({ queryKey: ['subscriptions-list'] });
         refreshUser();
         return;
       }
@@ -171,7 +183,11 @@ export default function WebSocketNotifications() {
           icon: <span className="text-lg">🔄</span>,
           duration: 5000,
         });
-        queryClient.invalidateQueries({ queryKey: ['subscription'] });
+        queryClient.invalidateQueries({
+          predicate: (query) =>
+            Array.isArray(query.queryKey) && query.queryKey[0] === 'subscription',
+        });
+        queryClient.invalidateQueries({ queryKey: ['subscriptions-list'] });
         return;
       }
 
@@ -183,7 +199,11 @@ export default function WebSocketNotifications() {
           devicesAdded: message.devices_added,
           newDeviceLimit: message.new_device_limit,
         });
-        queryClient.invalidateQueries({ queryKey: ['subscription'] });
+        queryClient.invalidateQueries({
+          predicate: (query) =>
+            Array.isArray(query.queryKey) && query.queryKey[0] === 'subscription',
+        });
+        queryClient.invalidateQueries({ queryKey: ['subscriptions-list'] });
         queryClient.invalidateQueries({ queryKey: ['balance'] });
         queryClient.invalidateQueries({ queryKey: ['purchase-options'] });
         queryClient.invalidateQueries({ queryKey: ['transactions'] });
@@ -199,7 +219,11 @@ export default function WebSocketNotifications() {
           trafficGbAdded: message.traffic_gb_added,
           newTrafficLimitGb: message.new_traffic_limit_gb,
         });
-        queryClient.invalidateQueries({ queryKey: ['subscription'] });
+        queryClient.invalidateQueries({
+          predicate: (query) =>
+            Array.isArray(query.queryKey) && query.queryKey[0] === 'subscription',
+        });
+        queryClient.invalidateQueries({ queryKey: ['subscriptions-list'] });
         queryClient.invalidateQueries({ queryKey: ['balance'] });
         queryClient.invalidateQueries({ queryKey: ['purchase-options'] });
         queryClient.invalidateQueries({ queryKey: ['transactions'] });
@@ -222,10 +246,14 @@ export default function WebSocketNotifications() {
             },
           ),
           icon: <span className="text-lg">🔁</span>,
-          onClick: () => navigate('/subscription'),
+          onClick: () => navigate('/subscriptions'),
           duration: 8000,
         });
-        queryClient.invalidateQueries({ queryKey: ['subscription'] });
+        queryClient.invalidateQueries({
+          predicate: (query) =>
+            Array.isArray(query.queryKey) && query.queryKey[0] === 'subscription',
+        });
+        queryClient.invalidateQueries({ queryKey: ['subscriptions-list'] });
         queryClient.invalidateQueries({ queryKey: ['balance'] });
         queryClient.invalidateQueries({ queryKey: ['purchase-options'] });
         refreshUser();
@@ -240,7 +268,7 @@ export default function WebSocketNotifications() {
             message.reason ||
             t('wsNotifications.autopay.failedMessage', 'Failed to auto-renew your subscription'),
           icon: <span className="text-lg">❌</span>,
-          onClick: () => navigate('/subscription'),
+          onClick: () => navigate('/subscriptions'),
           duration: 10000,
         });
         return;
@@ -264,6 +292,131 @@ export default function WebSocketNotifications() {
           icon: <span className="text-lg">💳</span>,
           onClick: () => navigate('/balance'),
           duration: 10000,
+        });
+        return;
+      }
+
+      // SBP recurring events
+      if (type === 'sbp_recurring.confirmed') {
+        const amount = message.amount_rubles ?? (message.amount_kopeks ?? 0) / 100;
+        showToast({
+          type: 'success',
+          title: t('wsNotifications.sbpRecurring.confirmedTitle', 'SBP payment confirmed'),
+          message: t(
+            'wsNotifications.sbpRecurring.confirmedMessage',
+            'Payment of {{amount}} {{currency}} was charged successfully',
+            {
+              amount: formatAmount(amount),
+              currency: currencySymbol,
+            },
+          ),
+          icon: <span className="text-lg">🔁</span>,
+          onClick: () => navigate('/subscriptions'),
+          duration: 8000,
+        });
+        queryClient.invalidateQueries({
+          predicate: (query) =>
+            Array.isArray(query.queryKey) && query.queryKey[0] === 'subscription',
+        });
+        queryClient.invalidateQueries({
+          predicate: (query) =>
+            Array.isArray(query.queryKey) && query.queryKey[0] === 'sbp-recurring',
+        });
+        queryClient.invalidateQueries({ queryKey: ['subscriptions-list'] });
+        refreshUser();
+        return;
+      }
+
+      if (type === 'sbp_recurring.activated') {
+        showToast({
+          type: 'success',
+          title: t('wsNotifications.sbpRecurring.activatedTitle', 'SBP auto-payment connected'),
+          message: t(
+            'wsNotifications.sbpRecurring.activatedMessage',
+            'SBP auto-payment has been successfully connected',
+          ),
+          icon: <span className="text-lg">🔁</span>,
+          onClick: () => navigate('/subscriptions'),
+          duration: 8000,
+        });
+        queryClient.invalidateQueries({
+          predicate: (query) =>
+            Array.isArray(query.queryKey) && query.queryKey[0] === 'subscription',
+        });
+        queryClient.invalidateQueries({
+          predicate: (query) =>
+            Array.isArray(query.queryKey) && query.queryKey[0] === 'sbp-recurring',
+        });
+        queryClient.invalidateQueries({ queryKey: ['subscriptions-list'] });
+        refreshUser();
+        return;
+      }
+
+      if (type === 'sbp_recurring.failed') {
+        showToast({
+          type: 'error',
+          title: t('wsNotifications.sbpRecurring.failedTitle', 'SBP payment failed'),
+          message: t(
+            'wsNotifications.sbpRecurring.failedMessage',
+            'Failed to charge your SBP auto-payment',
+          ),
+          icon: <span className="text-lg">❌</span>,
+          onClick: () => navigate('/subscriptions'),
+          duration: 10000,
+        });
+        queryClient.invalidateQueries({
+          predicate: (query) =>
+            Array.isArray(query.queryKey) && query.queryKey[0] === 'subscription',
+        });
+        queryClient.invalidateQueries({
+          predicate: (query) =>
+            Array.isArray(query.queryKey) && query.queryKey[0] === 'sbp-recurring',
+        });
+        return;
+      }
+
+      if (type === 'sbp_recurring.past_due') {
+        showToast({
+          type: 'warning',
+          title: t('wsNotifications.sbpRecurring.pastDueTitle', 'SBP payment overdue'),
+          message: t(
+            'wsNotifications.sbpRecurring.pastDueMessage',
+            'Your SBP auto-payment is overdue. Please check your banking app.',
+          ),
+          icon: <span className="text-lg">⚠️</span>,
+          onClick: () => navigate('/subscriptions'),
+          duration: 10000,
+        });
+        queryClient.invalidateQueries({
+          predicate: (query) =>
+            Array.isArray(query.queryKey) && query.queryKey[0] === 'subscription',
+        });
+        queryClient.invalidateQueries({
+          predicate: (query) =>
+            Array.isArray(query.queryKey) && query.queryKey[0] === 'sbp-recurring',
+        });
+        return;
+      }
+
+      if (type === 'sbp_recurring.cancelled') {
+        showToast({
+          type: 'warning',
+          title: t('wsNotifications.sbpRecurring.cancelledTitle', 'SBP auto-payment disabled'),
+          message: t(
+            'wsNotifications.sbpRecurring.cancelledMessage',
+            'SBP auto-payment has been disabled',
+          ),
+          icon: <span className="text-lg">🔕</span>,
+          onClick: () => navigate('/subscriptions'),
+          duration: 8000,
+        });
+        queryClient.invalidateQueries({
+          predicate: (query) =>
+            Array.isArray(query.queryKey) && query.queryKey[0] === 'subscription',
+        });
+        queryClient.invalidateQueries({
+          predicate: (query) =>
+            Array.isArray(query.queryKey) && query.queryKey[0] === 'sbp-recurring',
         });
         return;
       }

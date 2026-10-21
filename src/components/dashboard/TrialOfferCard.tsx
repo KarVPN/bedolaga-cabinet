@@ -1,10 +1,11 @@
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
-import { UseMutationResult } from '@tanstack/react-query';
+import type { UseMutationResult } from '@tanstack/react-query';
 import type { TrialInfo } from '../../types';
 import { useCurrency } from '../../hooks/useCurrency';
 import { useTheme } from '../../hooks/useTheme';
 import { getGlassColors } from '../../utils/glassTheme';
+import { BoltIcon, SparklesIcon } from '@/components/icons';
 
 interface TrialOfferCardProps {
   trialInfo: TrialInfo;
@@ -94,37 +95,21 @@ export default function TrialOfferCard({
         }}
       >
         {isFree ? (
-          <svg
-            width="26"
-            height="26"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="rgb(var(--color-accent-400))"
-            strokeWidth="1.5"
+          <span
+            className="flex"
+            style={{ color: 'rgb(var(--color-accent-400))' }}
             aria-hidden="true"
           >
-            <path
-              d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+            <SparklesIcon className="h-[26px] w-[26px]" />
+          </span>
         ) : (
-          <svg
-            width="26"
-            height="26"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="#FFB800"
-            strokeWidth="1.5"
+          <span
+            className="flex"
+            style={{ color: 'rgb(var(--color-urgent-400))' }}
             aria-hidden="true"
           >
-            <path
-              d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+            <BoltIcon className="h-[26px] w-[26px]" />
+          </span>
         )}
         {/* Glow effect */}
         <div
@@ -142,7 +127,7 @@ export default function TrialOfferCard({
       <h2 className="mb-1.5 text-[22px] font-bold tracking-tight text-dark-50">
         {isFree ? t('dashboard.trialOffer.freeTitle') : t('dashboard.trialOffer.paidTitle')}
       </h2>
-      <p className="mb-5 text-sm text-dark-50/40">
+      <p className="mb-5 text-sm text-dark-400">
         {isFree ? t('dashboard.trialOffer.freeDesc') : t('dashboard.trialOffer.paidDesc')}
       </p>
 
@@ -157,11 +142,14 @@ export default function TrialOfferCard({
         >
           <span
             className="text-[32px] font-extrabold leading-none tracking-tight"
-            style={{ color: '#FFB800' }}
+            style={{ color: 'rgb(var(--color-urgent-400))' }}
           >
             {trialInfo.price_rubles.toFixed(0)}
           </span>
-          <span className="text-base font-semibold opacity-70" style={{ color: '#FFB800' }}>
+          <span
+            className="text-base font-semibold opacity-70"
+            style={{ color: 'rgb(var(--color-urgent-400))' }}
+          >
             {currencySymbol}
           </span>
         </div>
@@ -184,7 +172,7 @@ export default function TrialOfferCard({
             <div className="text-4xl font-extrabold leading-none tracking-tight text-dark-50">
               {stat.value}
             </div>
-            <div className="mt-1 text-xs font-medium text-dark-50/30">{stat.label}</div>
+            <div className="mt-1 text-xs font-medium text-dark-400">{stat.label}</div>
           </div>
         ))}
       </div>
@@ -196,11 +184,13 @@ export default function TrialOfferCard({
           style={{ background: g.innerBg, border: `1px solid ${g.innerBorder}` }}
         >
           <div className="flex items-center justify-between">
-            <span className="text-sm text-dark-50/40">{t('balance.currentBalance')}</span>
+            <span className="text-sm text-dark-400">{t('balance.currentBalance')}</span>
             <span
               className={`font-display text-sm font-semibold ${canAfford ? 'text-success-400' : 'text-warning-400'}`}
             >
-              {formatAmount(balanceRubles)} {currencySymbol}
+              {formatAmount(balanceRubles)}
+              {'\u00A0'}
+              {currencySymbol}
             </span>
           </div>
           {!canAfford && (

@@ -1,4 +1,5 @@
 ﻿import apiClient from './client';
+import i18n from '../i18n';
 import type {
   Balance,
   Transaction,
@@ -52,6 +53,8 @@ export const balanceApi = {
     amount_rubles: number;
     status: string;
     expires_at: string | null;
+    /** Свой экран оплаты (Cashera H2H): строка QR СБП или платёжная ссылка. */
+    qr_payload?: string | null;
   }> => {
     const payload: {
       amount_kopeks: number;
@@ -60,6 +63,7 @@ export const balanceApi = {
       return_to_miniapp?: boolean;
       receipt_email?: string;
       receipt_phone?: string;
+      language?: string;
     } = {
       amount_kopeks: amountKopeks,
       payment_method: paymentMethod,
@@ -76,6 +80,7 @@ export const balanceApi = {
     if (receiptPhone) {
       payload.receipt_phone = receiptPhone;
     }
+    payload.language = i18n.language || 'ru';
     const response = await apiClient.post('/cabinet/balance/topup', payload);
     return response.data;
   },
@@ -83,14 +88,21 @@ export const balanceApi = {
   // Activate promo code
   activatePromocode: async (
     code: string,
+    subscriptionId?: number,
   ): Promise<{
     success: boolean;
-    message: string;
-    balance_before: number;
-    balance_after: number;
-    bonus_description: string | null;
+    message?: string;
+    balance_before?: number;
+    balance_after?: number;
+    bonus_description?: string | null;
+    error?: string;
+    eligible_subscriptions?: Array<{ id: number; tariff_name: string; days_left: number }>;
+    code?: string;
   }> => {
-    const response = await apiClient.post('/cabinet/promocode/activate', { code });
+    const response = await apiClient.post('/cabinet/promocode/activate', {
+      code,
+      ...(subscriptionId ? { subscription_id: subscriptionId } : {}),
+    });
     return response.data;
   },
 

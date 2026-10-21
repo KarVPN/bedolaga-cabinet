@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
+import { PiCaretDown } from 'react-icons/pi';
 import { useNavigate, useParams } from 'react-router';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -11,8 +12,9 @@ import {
   type SupportedLocale,
   toLocaleDict,
 } from '../api/landings';
-import { tariffsApi, TariffListItem, PeriodPrice } from '../api/tariffs';
+import { tariffsApi, type TariffListItem, type PeriodPrice } from '../api/tariffs';
 import { formatPrice } from '../utils/format';
+import { useCurrency } from '../hooks/useCurrency';
 import { adminPaymentMethodsApi } from '../api/adminPaymentMethods';
 import { Toggle, LocaleTabs, LocalizedInput } from '../components/admin';
 import { BackgroundConfigEditor } from '../components/admin/BackgroundConfigEditor';
@@ -51,15 +53,7 @@ function isoToDatetimeLocal(iso: string): string {
 }
 
 const ChevronDownIcon = ({ open }: { open: boolean }) => (
-  <svg
-    className={cn('h-5 w-5 transition-transform', open && 'rotate-180')}
-    fill="none"
-    viewBox="0 0 24 24"
-    stroke="currentColor"
-    strokeWidth={2}
-  >
-    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-  </svg>
+  <PiCaretDown className={cn('h-5 w-5 transition-transform', open && 'rotate-180')} />
 );
 
 // ============ Collapsible Section ============
@@ -97,6 +91,9 @@ export default function AdminLandingEditor() {
   const { capabilities } = usePlatform();
   const isEdit = !!id;
 
+  // Прогреваем кэш курсов валют для formatPrice (preview лендинга в не-RU локали).
+  useCurrency();
+
   // Section visibility
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     general: true,
@@ -106,6 +103,7 @@ export default function AdminLandingEditor() {
     methods: false,
     gifts: false,
     background: false,
+    analytics: false,
     footer: false,
   });
 
@@ -136,6 +134,13 @@ export default function AdminLandingEditor() {
     ...DEFAULT_ANIMATION_CONFIG,
     enabled: false,
   });
+
+  // Analytics goals state
+  const [analyticsViewEnabled, setAnalyticsViewEnabled] = useState(false);
+  const [analyticsViewGoal, setAnalyticsViewGoal] = useState('landing_view');
+  const [analyticsClickEnabled, setAnalyticsClickEnabled] = useState(false);
+  const [analyticsClickGoal, setAnalyticsClickGoal] = useState('landing_pay');
+  const [stickyPayButton, setStickyPayButton] = useState(false);
 
   // Discount state
   const [discountPercent, setDiscountPercent] = useState<number | null>(null);
@@ -267,6 +272,11 @@ export default function AdminLandingEditor() {
       landingData.discount_ends_at ? isoToDatetimeLocal(landingData.discount_ends_at) : '',
     );
     setDiscountBadgeText(toLocaleDict(landingData.discount_badge_text));
+    setAnalyticsViewEnabled(landingData.analytics_view_enabled ?? false);
+    setAnalyticsViewGoal(landingData.analytics_view_goal || 'landing_view');
+    setAnalyticsClickEnabled(landingData.analytics_click_enabled ?? false);
+    setAnalyticsClickGoal(landingData.analytics_click_goal || 'landing_pay');
+    setStickyPayButton(landingData.sticky_pay_button ?? false);
   }, [landingData]);
 
   // Create mutation
@@ -378,6 +388,11 @@ export default function AdminLandingEditor() {
       discount_badge_text:
         discountPercent !== null ? (nonEmptyDict(discountBadgeText) ?? null) : null,
       background_config: backgroundConfig.enabled ? backgroundConfig : null,
+      analytics_view_enabled: analyticsViewEnabled,
+      analytics_view_goal: analyticsViewGoal,
+      analytics_click_enabled: analyticsClickEnabled,
+      analytics_click_goal: analyticsClickGoal,
+      sticky_pay_button: stickyPayButton,
     };
 
     if (isEdit) {
@@ -554,7 +569,7 @@ export default function AdminLandingEditor() {
           {!capabilities.hasBackButton && (
             <button
               onClick={() => navigate('/admin/landings')}
-              className="flex h-10 w-10 items-center justify-center rounded-xl border border-dark-700 bg-dark-800 transition-colors hover:border-dark-600"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-dark-700 bg-dark-800 transition-colors hover:border-dark-600"
             >
               <BackIcon />
             </button>
@@ -573,7 +588,7 @@ export default function AdminLandingEditor() {
           <button
             onClick={handleSubmit}
             disabled={isPending || !slug || !Object.values(title).some((v) => v.trim())}
-            className="flex items-center gap-2 rounded-lg bg-accent-500 px-4 py-2 text-sm text-white transition-colors hover:bg-accent-600 disabled:opacity-50"
+            className="flex items-center gap-2 rounded-lg bg-accent-500 px-4 py-2 text-sm text-on-accent transition-colors hover:bg-accent-600 disabled:opacity-50"
           >
             {isPending && (
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
@@ -828,7 +843,7 @@ export default function AdminLandingEditor() {
                       max={99}
                       value={discountPercent}
                       onChange={(e) => setDiscountPercent(Number(e.target.value))}
-                      className="h-2 flex-1 cursor-pointer appearance-none rounded-lg bg-dark-700 accent-accent-500"
+                      className="h-2 min-w-0 flex-1 cursor-pointer appearance-none rounded-lg bg-dark-700 accent-accent-500"
                     />
                     <div className="flex w-20 items-center rounded-lg border border-dark-700 bg-dark-800">
                       <input
@@ -963,15 +978,20 @@ export default function AdminLandingEditor() {
                           Math.floor((firstPeriod.price_kopeks * pct) / 100),
                       );
                       return (
-                        <div key={tariffId} className="flex items-center gap-2 py-1">
-                          <span className="text-sm text-dark-300">{tariff.name}:</span>
+                        <div
+                          key={tariffId}
+                          className="flex flex-wrap items-center gap-x-2 gap-y-1 py-1"
+                        >
+                          <span className="min-w-0 text-sm text-dark-300 [overflow-wrap:anywhere]">
+                            {tariff.name}:
+                          </span>
                           <span className="text-xs text-dark-500 line-through">
                             {formatPrice(firstPeriod.price_kopeks)}
                           </span>
                           <span className="text-sm font-semibold text-accent-400">
                             {formatPrice(discounted)}
                           </span>
-                          <span className="rounded-full bg-accent-500/20 px-1.5 py-0.5 text-[10px] font-medium text-accent-400">
+                          <span className="shrink-0 whitespace-nowrap rounded-full bg-accent-500/20 px-1.5 py-0.5 text-[10px] font-medium text-accent-400">
                             -{pct}%
                           </span>
                         </div>
@@ -1015,11 +1035,13 @@ export default function AdminLandingEditor() {
                         onChange={() => togglePaymentMethod(sysMethod.method_id)}
                         className="h-4 w-4 rounded border-dark-600 bg-dark-700 text-accent-500"
                       />
-                      <span className="flex items-center gap-2 text-sm font-medium text-dark-100">
-                        {sysMethod.display_name ?? sysMethod.default_display_name}
+                      <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-dark-100">
+                        <span className="min-w-0 [overflow-wrap:anywhere]">
+                          {sysMethod.display_name ?? sysMethod.default_display_name}
+                        </span>
                         {sysMethod.available_sub_options &&
                           sysMethod.available_sub_options.length > 0 && (
-                            <span className="rounded-full bg-dark-700 px-1.5 py-0.5 text-[10px] text-dark-400">
+                            <span className="whitespace-nowrap rounded-full bg-dark-700 px-1.5 py-0.5 text-[10px] text-dark-400">
                               {sysMethod.available_sub_options.map((o) => o.name).join(' / ')}
                             </span>
                           )}
@@ -1077,6 +1099,72 @@ export default function AdminLandingEditor() {
           onToggle={() => toggleSection('background')}
         >
           <BackgroundConfigEditor value={backgroundConfig} onChange={setBackgroundConfig} />
+        </Section>
+
+        {/* Analytics Goals Section */}
+        <Section
+          title={t('admin.landings.analytics', 'Analytics')}
+          open={openSections.analytics}
+          onToggle={() => toggleSection('analytics')}
+        >
+          <div className="space-y-4">
+            {/* View Goal */}
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0 flex-1">
+                <label className="mb-1 block text-sm text-dark-400">
+                  {t('admin.landings.viewGoal', 'View goal')}
+                </label>
+                <input
+                  type="text"
+                  value={analyticsViewGoal}
+                  onChange={(e) => setAnalyticsViewGoal(e.target.value)}
+                  disabled={!analyticsViewEnabled}
+                  className="w-full rounded-lg border border-dark-700 bg-dark-800 px-3 py-2 text-sm text-dark-100 outline-none focus:border-accent-500 disabled:opacity-50"
+                  placeholder="landing_view"
+                />
+              </div>
+              <Toggle
+                checked={analyticsViewEnabled}
+                onChange={() => setAnalyticsViewEnabled((v) => !v)}
+              />
+            </div>
+
+            {/* Click Goal */}
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0 flex-1">
+                <label className="mb-1 block text-sm text-dark-400">
+                  {t('admin.landings.clickGoal', 'Payment click goal')}
+                </label>
+                <input
+                  type="text"
+                  value={analyticsClickGoal}
+                  onChange={(e) => setAnalyticsClickGoal(e.target.value)}
+                  disabled={!analyticsClickEnabled}
+                  className="w-full rounded-lg border border-dark-700 bg-dark-800 px-3 py-2 text-sm text-dark-100 outline-none focus:border-accent-500 disabled:opacity-50"
+                  placeholder="landing_pay"
+                />
+              </div>
+              <Toggle
+                checked={analyticsClickEnabled}
+                onChange={() => setAnalyticsClickEnabled((v) => !v)}
+              />
+            </div>
+            {/* Sticky pay button on mobile */}
+            <div className="flex items-center justify-between gap-4 border-t border-dark-800 pt-4">
+              <div>
+                <p className="text-sm text-dark-300">
+                  {t('admin.landings.stickyPayButton', 'Sticky pay button (mobile)')}
+                </p>
+                <p className="text-xs text-dark-500">
+                  {t(
+                    'admin.landings.stickyPayButtonHint',
+                    'Button pinned to bottom of screen on mobile',
+                  )}
+                </p>
+              </div>
+              <Toggle checked={stickyPayButton} onChange={() => setStickyPayButton((v) => !v)} />
+            </div>
+          </div>
         </Section>
 
         {/* Footer & Custom CSS Section */}

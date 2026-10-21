@@ -3,7 +3,7 @@ import { MemoryRouter } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { PlatformProvider } from '../../src/platform/PlatformProvider';
 import { usePermissionStore } from '../../src/store/permissions';
-import AdminUsers from '../../src/pages/AdminUsers';
+import AdminUsers from '../../src/pages/AdminUserOperations';
 import '../../src/i18n';
 import '../../src/styles/globals.css';
 

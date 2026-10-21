@@ -1,6 +1,30 @@
-import { lazy, Suspense, useEffect } from 'react';
-import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router';
+import { useMiniAppPaymentReturn } from './hooks/useMiniAppPaymentReturn';
+import { safeSession } from './utils/safeStorage';
+import { lazy, Suspense, type ComponentType } from 'react';
+import { Routes, Route, Navigate, useLocation, useParams } from 'react-router';
 import { useAuthStore } from './store/auth';
+
+/**
+ * Wrapper around React.lazy that auto-reloads the page when a chunk fails to load
+ * (e.g. after a new deploy with different chunk hashes).
+ */
+function lazyWithRetry<T extends ComponentType<unknown>>(factory: () => Promise<{ default: T }>) {
+  return lazy(() =>
+    factory().catch(() => {
+      const key = 'chunk_reload_ts';
+      const last = Number(safeSession.getItem(key) || '0');
+      // Метка обязана пережить сам reload — в этом её единственный смысл. Если
+      // сохранить её негде, перезагрузка станет бесконечной: после reload метки
+      // не окажется, и условие снова выполнится. Лучше отдать ошибку в
+      // ErrorBoundary, чем крутить страницу по кругу.
+      if (Date.now() - last > 30_000 && safeSession.setItem(key, String(Date.now()))) {
+        window.location.reload();
+      }
+      // Re-throw so ErrorBoundary catches it if reload guard prevents loop
+      return factory();
+    }),
+  );
+}
 import { useBlockingStore } from './store/blocking';
 import Layout from './components/layout/Layout';
 import PageLoader from './components/common/PageLoader';
@@ -8,12 +32,18 @@ import {
   MaintenanceScreen,
   ChannelSubscriptionScreen,
   BlacklistedScreen,
+  AccountDeletedScreen,
+  ServiceUnavailableScreen,
 } from './components/blocking';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { BackgroundHost } from './components/backgrounds/BackgroundHost';
 import { PermissionRoute } from '@/components/auth/PermissionRoute';
+import { RemountOnParam } from '@/components/RemountOnParam';
 import { saveReturnUrl } from './utils/token';
+import { ScreenViewReporter } from './components/ScreenViewReporter';
 import { useAnalyticsCounters } from './hooks/useAnalyticsCounters';
-import { getTelegramStartParam, isInTelegramWebApp } from './hooks/useTelegramSDK';
+import { useSiteVerification } from './hooks/useSiteVerification';
+import { useDoneKey } from './hooks/useDoneKey';
 // Auth pages - load immediately (small)
 import Login from './pages/Login';
 import TelegramCallback from './pages/TelegramCallback';
@@ -21,107 +51,137 @@ import TelegramRedirect from './pages/TelegramRedirect';
 import DeepLinkRedirect from './pages/DeepLinkRedirect';
 import VerifyEmail from './pages/VerifyEmail';
 import ResetPassword from './pages/ResetPassword';
+import PublicLegal from './pages/PublicLegal';
 import OAuthCallback from './pages/OAuthCallback';
 
-// Dashboard - load eagerly (default route, LCP-critical)
-import Dashboard from './pages/Dashboard';
+// Dashboard - load eagerly (default route, LCP-critical).
+// HomeScreen выбирает между полным и простым видом по настройке оператора.
+import HomeScreen from './pages/HomeScreen';
 
 // User pages - lazy load
-const Subscription = lazy(() => import('./pages/Subscription'));
-const SubscriptionPurchase = lazy(() => import('./pages/SubscriptionPurchase'));
-const Balance = lazy(() => import('./pages/Balance'));
-const SavedCards = lazy(() => import('./pages/SavedCards'));
-const Referral = lazy(() => import('./pages/Referral'));
-const Support = lazy(() => import('./pages/Support'));
-const Profile = lazy(() => import('./pages/Profile'));
-const Contests = lazy(() => import('./pages/Contests'));
-const Polls = lazy(() => import('./pages/Polls'));
-const Info = lazy(() => import('./pages/Info'));
-const Wheel = lazy(() => import('./pages/Wheel'));
-const GiftSubscription = lazy(() => import('./pages/GiftSubscription'));
-const GiftResult = lazy(() => import('./pages/GiftResult'));
-const Connection = lazy(() => import('./pages/Connection'));
-const ConnectionQR = lazy(() => import('./pages/ConnectionQR'));
-const QuickPurchase = lazy(() => import('./pages/QuickPurchase'));
-const PurchaseSuccess = lazy(() => import('./pages/PurchaseSuccess'));
-const AutoLogin = lazy(() => import('./pages/AutoLogin'));
-const TopUpMethodSelect = lazy(() => import('./pages/TopUpMethodSelect'));
-const TopUpAmount = lazy(() => import('./pages/TopUpAmount'));
-const TopUpResult = lazy(() => import('./pages/TopUpResult'));
-const ConnectedAccounts = lazy(() => import('./pages/ConnectedAccounts'));
-const LinkTelegramCallback = lazy(() => import('./pages/LinkTelegramCallback'));
-const MergeAccounts = lazy(() => import('./pages/MergeAccounts'));
+const Subscriptions = lazyWithRetry(() => import('./pages/Subscriptions'));
+// Развилка простого и полного вида страницы подписки (оба экрана внутри ленивые).
+const SubscriptionScreen = lazyWithRetry(() => import('./pages/SubscriptionScreen'));
+const SubscriptionPurchase = lazyWithRetry(() => import('./pages/SubscriptionPurchase'));
+const Balance = lazyWithRetry(() => import('./pages/Balance'));
+const SavedCards = lazyWithRetry(() => import('./pages/SavedCards'));
+const Referral = lazyWithRetry(() => import('./pages/Referral'));
+const Support = lazyWithRetry(() => import('./pages/Support'));
+const Profile = lazyWithRetry(() => import('./pages/Profile'));
+const Contests = lazyWithRetry(() => import('./pages/Contests'));
+const Polls = lazyWithRetry(() => import('./pages/Polls'));
+const Info = lazyWithRetry(() => import('./pages/Info'));
+const Wheel = lazyWithRetry(() => import('./pages/Wheel'));
+const GiftSubscription = lazyWithRetry(() => import('./pages/GiftSubscription'));
+const GiftResult = lazyWithRetry(() => import('./pages/GiftResult'));
+const Connection = lazyWithRetry(() => import('./pages/Connection'));
+const ConnectionQR = lazyWithRetry(() => import('./pages/ConnectionQR'));
+const QuickPurchase = lazyWithRetry(() => import('./pages/QuickPurchase'));
+const PurchaseSuccess = lazyWithRetry(() => import('./pages/PurchaseSuccess'));
+const GiftClaim = lazyWithRetry(() => import('./pages/GiftClaim'));
+const RenewSubscription = lazyWithRetry(() => import('./pages/RenewSubscription'));
+const AutoLogin = lazyWithRetry(() => import('./pages/AutoLogin'));
+const TopUpMethodSelect = lazyWithRetry(() => import('./pages/TopUpMethodSelect'));
+const TopUpAmount = lazyWithRetry(() => import('./pages/TopUpAmount'));
+const TopUpResult = lazyWithRetry(() => import('./pages/TopUpResult'));
+const ConnectedAccounts = lazyWithRetry(() => import('./pages/ConnectedAccounts'));
+const LinkTelegramCallback = lazyWithRetry(() => import('./pages/LinkTelegramCallback'));
+const MergeAccounts = lazyWithRetry(() => import('./pages/MergeAccounts'));
 
 // Admin pages - lazy load (only for admins)
-const AdminPanel = lazy(() => import('./pages/AdminPanel'));
-const AdminTickets = lazy(() => import('./pages/AdminTickets'));
-const AdminTicketSettings = lazy(() => import('./pages/AdminTicketSettings'));
-const AdminSettings = lazy(() => import('./pages/AdminSettings'));
-const AdminApps = lazy(() => import('./pages/AdminApps'));
-const AdminWheel = lazy(() => import('./pages/AdminWheel'));
-const AdminTariffs = lazy(() => import('./pages/AdminTariffs'));
-const AdminTariffCreate = lazy(() => import('./pages/AdminTariffCreate'));
-const AdminServers = lazy(() => import('./pages/AdminServers'));
-const AdminServerEdit = lazy(() => import('./pages/AdminServerEdit'));
-const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
-const AdminBanSystem = lazy(() => import('./pages/AdminBanSystem'));
-const AdminBroadcasts = lazy(() => import('./pages/AdminBroadcasts'));
-const AdminBroadcastCreate = lazy(() => import('./pages/AdminBroadcastCreate'));
-const AdminPromocodes = lazy(() => import('./pages/AdminPromocodes'));
-const AdminPromocodeCreate = lazy(() => import('./pages/AdminPromocodeCreate'));
-const AdminPromocodeStats = lazy(() => import('./pages/AdminPromocodeStats'));
-const AdminPromoGroups = lazy(() => import('./pages/AdminPromoGroups'));
-const AdminPromoGroupCreate = lazy(() => import('./pages/AdminPromoGroupCreate'));
-const AdminCampaigns = lazy(() => import('./pages/AdminCampaigns'));
-const AdminCampaignCreate = lazy(() => import('./pages/AdminCampaignCreate'));
-const AdminCampaignStats = lazy(() => import('./pages/AdminCampaignStats'));
-const AdminCampaignEdit = lazy(() => import('./pages/AdminCampaignEdit'));
-const AdminPartners = lazy(() => import('./pages/AdminPartners'));
-const AdminPartnerSettings = lazy(() => import('./pages/AdminPartnerSettings'));
-const AdminPartnerDetail = lazy(() => import('./pages/AdminPartnerDetail'));
-const AdminApplicationReview = lazy(() => import('./pages/AdminApplicationReview'));
-const AdminPartnerCommission = lazy(() => import('./pages/AdminPartnerCommission'));
-const AdminPartnerRevoke = lazy(() => import('./pages/AdminPartnerRevoke'));
-const AdminPartnerCampaignAssign = lazy(() => import('./pages/AdminPartnerCampaignAssign'));
-const AdminWithdrawals = lazy(() => import('./pages/AdminWithdrawals'));
-const AdminWithdrawalDetail = lazy(() => import('./pages/AdminWithdrawalDetail'));
-const AdminWithdrawalReject = lazy(() => import('./pages/AdminWithdrawalReject'));
-const ReferralPartnerApply = lazy(() => import('./pages/ReferralPartnerApply'));
-const ReferralWithdrawalRequest = lazy(() => import('./pages/ReferralWithdrawalRequest'));
-const AdminUsers = lazy(() => import('./pages/AdminUsers'));
-const AdminPayments = lazy(() => import('./pages/AdminPayments'));
-const AdminPaymentMethods = lazy(() => import('./pages/AdminPaymentMethods'));
-const AdminPaymentMethodEdit = lazy(() => import('./pages/AdminPaymentMethodEdit'));
-const AdminPromoOffers = lazy(() => import('./pages/AdminPromoOffers'));
-const AdminPromoOfferTemplateEdit = lazy(() => import('./pages/AdminPromoOfferTemplateEdit'));
-const AdminPromoOfferSend = lazy(() => import('./pages/AdminPromoOfferSend'));
-const AdminRemnawave = lazy(() => import('./pages/AdminRemnawave'));
-const AdminRemnawaveSquadDetail = lazy(() => import('./pages/AdminRemnawaveSquadDetail'));
-const AdminEmailTemplates = lazy(() => import('./pages/AdminEmailTemplates'));
-const AdminTrafficUsage = lazy(() => import('./pages/AdminTrafficUsage'));
-const AdminSalesStats = lazy(() => import('./pages/AdminSalesStats'));
-const AdminUpdates = lazy(() => import('./pages/AdminUpdates'));
-const AdminUserDetail = lazy(() => import('./pages/AdminUserDetail'));
-const AdminBroadcastDetail = lazy(() => import('./pages/AdminBroadcastDetail'));
-const AdminPinnedMessages = lazy(() => import('./pages/AdminPinnedMessages'));
-const AdminPinnedMessageCreate = lazy(() => import('./pages/AdminPinnedMessageCreate'));
-const AdminChannelSubscriptions = lazy(() => import('./pages/AdminChannelSubscriptions'));
-const AdminEmailTemplatePreview = lazy(() => import('./pages/AdminEmailTemplatePreview'));
-const AdminRoles = lazy(() => import('./pages/AdminRoles'));
-const AdminRoleEdit = lazy(() => import('./pages/AdminRoleEdit'));
-const AdminRoleAssign = lazy(() => import('./pages/AdminRoleAssign'));
-const AdminPolicies = lazy(() => import('./pages/AdminPolicies'));
-const AdminPolicyEdit = lazy(() => import('./pages/AdminPolicyEdit'));
-const AdminAuditLog = lazy(() => import('./pages/AdminAuditLog'));
-const AdminLandings = lazy(() => import('./pages/AdminLandings'));
-const AdminLandingEditor = lazy(() => import('./pages/AdminLandingEditor'));
-const AdminLandingStats = lazy(() => import('./pages/AdminLandingStats'));
-const AdminReferralNetwork = lazy(() => import('./pages/ReferralNetwork'));
+const AdminPanel = lazyWithRetry(() => import('./pages/AdminPanel'));
+const AdminTickets = lazyWithRetry(() => import('./pages/AdminTickets'));
+const AdminTicketSettings = lazyWithRetry(() => import('./pages/AdminTicketSettings'));
+const AdminSettings = lazyWithRetry(() => import('./pages/AdminSettings'));
+const AdminGraceAccess = lazyWithRetry(() => import('./pages/AdminGraceAccess'));
+const AdminApps = lazyWithRetry(() => import('./pages/AdminApps'));
+const AdminWheel = lazyWithRetry(() => import('./pages/AdminWheel'));
+const AdminTariffs = lazyWithRetry(() => import('./pages/AdminTariffs'));
+const AdminTariffCreate = lazyWithRetry(() => import('./pages/AdminTariffCreate'));
+const AdminServers = lazyWithRetry(() => import('./pages/AdminServers'));
+const AdminServerEdit = lazyWithRetry(() => import('./pages/AdminServerEdit'));
+const AdminDashboard = lazyWithRetry(() => import('./pages/AdminDashboard'));
+const AdminBanSystem = lazyWithRetry(() => import('./pages/AdminBanSystem'));
+const AdminBroadcasts = lazyWithRetry(() => import('./pages/AdminBroadcasts'));
+const AdminBroadcastCreate = lazyWithRetry(() => import('./pages/AdminBroadcastCreate'));
+const AdminPromocodes = lazyWithRetry(() => import('./pages/AdminPromocodes'));
+const AdminPromocodeCreate = lazyWithRetry(() => import('./pages/AdminPromocodeCreate'));
+const AdminCoupons = lazyWithRetry(() => import('./pages/AdminCoupons'));
+const AdminCouponCreate = lazyWithRetry(() => import('./pages/AdminCouponCreate'));
+const AdminCouponDetail = lazyWithRetry(() => import('./pages/AdminCouponDetail'));
+const CouponStatus = lazyWithRetry(() => import('./pages/CouponStatus'));
+const AdminPromocodeStats = lazyWithRetry(() => import('./pages/AdminPromocodeStats'));
+const AdminPromoGroups = lazyWithRetry(() => import('./pages/AdminPromoGroups'));
+const AdminPromoGroupCreate = lazyWithRetry(() => import('./pages/AdminPromoGroupCreate'));
+const AdminCampaigns = lazyWithRetry(() => import('./pages/AdminCampaigns'));
+const AdminCampaignCreate = lazyWithRetry(() => import('./pages/AdminCampaignCreate'));
+const AdminCampaignStats = lazyWithRetry(() => import('./pages/AdminCampaignStats'));
+const AdminCampaignEdit = lazyWithRetry(() => import('./pages/AdminCampaignEdit'));
+const AdminPartners = lazyWithRetry(() => import('./pages/AdminPartners'));
+const AdminPartnerSettings = lazyWithRetry(() => import('./pages/AdminPartnerSettings'));
+const AdminReferralLevels = lazyWithRetry(() => import('./pages/AdminReferralLevels'));
+const AdminPartnerDetail = lazyWithRetry(() => import('./pages/AdminPartnerDetail'));
+const AdminApplicationReview = lazyWithRetry(() => import('./pages/AdminApplicationReview'));
+const AdminPartnerCommission = lazyWithRetry(() => import('./pages/AdminPartnerCommission'));
+const AdminPartnerRevoke = lazyWithRetry(() => import('./pages/AdminPartnerRevoke'));
+const AdminPartnerCampaignAssign = lazyWithRetry(
+  () => import('./pages/AdminPartnerCampaignAssign'),
+);
+const AdminWithdrawals = lazyWithRetry(() => import('./pages/AdminWithdrawals'));
+const AdminWithdrawalDetail = lazyWithRetry(() => import('./pages/AdminWithdrawalDetail'));
+const AdminWithdrawalReject = lazyWithRetry(() => import('./pages/AdminWithdrawalReject'));
+const ReferralPartnerApply = lazyWithRetry(() => import('./pages/ReferralPartnerApply'));
+const ReferralWithdrawalRequest = lazyWithRetry(() => import('./pages/ReferralWithdrawalRequest'));
+const AdminUserOperations = lazyWithRetry(() => import('./pages/AdminUserOperations'));
+const AdminUsers = lazyWithRetry(() => import('./pages/AdminUsers'));
+const AdminPayments = lazyWithRetry(() => import('./pages/AdminPayments'));
+const AdminPaymentMethods = lazyWithRetry(() => import('./pages/AdminPaymentMethods'));
+const AdminPaymentMethodEdit = lazyWithRetry(() => import('./pages/AdminPaymentMethodEdit'));
+const AdminPromoOffers = lazyWithRetry(() => import('./pages/AdminPromoOffers'));
+const AdminPromoOfferTemplateEdit = lazyWithRetry(
+  () => import('./pages/AdminPromoOfferTemplateEdit'),
+);
+const AdminPromoOfferSend = lazyWithRetry(() => import('./pages/AdminPromoOfferSend'));
+const AdminReachability = lazyWithRetry(() => import('./pages/AdminReachability'));
+const AdminReachabilityHistory = lazyWithRetry(() => import('./pages/AdminReachabilityHistory'));
+const AdminReachabilityOther = lazyWithRetry(() => import('./pages/AdminReachabilityOther'));
+const AdminDpiChecker = lazyWithRetry(() => import('./pages/AdminDpiChecker'));
+const AdminRemnawave = lazyWithRetry(() => import('./pages/AdminRemnawave'));
+const AdminRemnawaveSquadDetail = lazyWithRetry(() => import('./pages/AdminRemnawaveSquadDetail'));
+const AdminEmailTemplates = lazyWithRetry(() => import('./pages/AdminEmailTemplates'));
+const AdminTrafficUsage = lazyWithRetry(() => import('./pages/AdminTrafficUsage'));
+const AdminBulkActions = lazyWithRetry(() => import('./pages/AdminBulkActions'));
+const AdminSalesStats = lazyWithRetry(() => import('./pages/AdminSalesStats'));
+const AdminUpdates = lazyWithRetry(() => import('./pages/AdminUpdates'));
+const AdminUserDetail = lazyWithRetry(() => import('./pages/AdminUserDetail'));
+const AdminBroadcastDetail = lazyWithRetry(() => import('./pages/AdminBroadcastDetail'));
+const AdminPinnedMessages = lazyWithRetry(() => import('./pages/AdminPinnedMessages'));
+const AdminPinnedMessageCreate = lazyWithRetry(() => import('./pages/AdminPinnedMessageCreate'));
+const AdminReminders = lazyWithRetry(() => import('./pages/AdminReminders'));
+const AdminReminderEdit = lazyWithRetry(() => import('./pages/AdminReminderEdit'));
+const AdminChannelSubscriptions = lazyWithRetry(() => import('./pages/AdminChannelSubscriptions'));
+const AdminRoles = lazyWithRetry(() => import('./pages/AdminRoles'));
+const AdminRoleEdit = lazyWithRetry(() => import('./pages/AdminRoleEdit'));
+const AdminRoleAssign = lazyWithRetry(() => import('./pages/AdminRoleAssign'));
+const AdminPolicies = lazyWithRetry(() => import('./pages/AdminPolicies'));
+const AdminPolicyEdit = lazyWithRetry(() => import('./pages/AdminPolicyEdit'));
+const AdminAuditLog = lazyWithRetry(() => import('./pages/AdminAuditLog'));
+const AdminSystemErrors = lazyWithRetry(() => import('./pages/AdminSystemErrors'));
+const AdminLandings = lazyWithRetry(() => import('./pages/AdminLandings'));
+const AdminLandingEditor = lazyWithRetry(() => import('./pages/AdminLandingEditor'));
+const AdminLandingStats = lazyWithRetry(() => import('./pages/AdminLandingStats'));
+const AdminReferralNetwork = lazyWithRetry(() => import('./pages/ReferralNetwork'));
 
 // News pages
-const NewsArticlePage = lazy(() => import('./pages/NewsArticle'));
-const AdminNews = lazy(() => import('./pages/AdminNews'));
-const AdminNewsCreate = lazy(() => import('./pages/AdminNewsCreate'));
+const NewsArticlePage = lazyWithRetry(() => import('./pages/NewsArticle'));
+const AdminNews = lazyWithRetry(() => import('./pages/AdminNews'));
+const AdminNewsCreate = lazyWithRetry(() => import('./pages/AdminNewsCreate'));
+
+// Info pages
+const InfoPageView = lazyWithRetry(() => import('./pages/InfoPageView'));
+const AdminInfoPages = lazyWithRetry(() => import('./pages/AdminInfoPages'));
+const AdminInfoPageEditor = lazyWithRetry(() => import('./pages/AdminInfoPageEditor'));
+const AdminLegalPages = lazyWithRetry(() => import('./pages/AdminLegalPages'));
 
 function ProtectedRoute({
   children,
@@ -143,7 +203,18 @@ function ProtectedRoute({
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 
-  return withLayout ? <Layout>{children}</Layout> : <>{children}</>;
+  // След пользователя: каждый открытый экран уходит в «Активность» его карточки.
+  return withLayout ? (
+    <Layout>
+      <ScreenViewReporter />
+      {children}
+    </Layout>
+  ) : (
+    <>
+      <ScreenViewReporter />
+      {children}
+    </>
+  );
 }
 
 function AdminRoute({ children }: { children: React.ReactNode }) {
@@ -168,9 +239,16 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   return <Layout>{children}</Layout>;
 }
 
-// Suspense wrapper for lazy components
+// Suspense + error boundary wrapper for lazy routes. The boundary lives
+// OUTSIDE Suspense so chunk-load failures (caught by lazyWithRetry's reload
+// path) and render-time exceptions both surface in the page-level fallback
+// instead of crashing the entire shell via the top-level boundary.
 function LazyPage({ children }: { children: React.ReactNode }) {
-  return <Suspense fallback={<PageLoader variant="dark" />}>{children}</Suspense>;
+  return (
+    <ErrorBoundary level="page">
+      <Suspense fallback={<PageLoader variant="dark" />}>{children}</Suspense>
+    </ErrorBoundary>
+  );
 }
 
 function BlockingOverlay() {
@@ -188,53 +266,36 @@ function BlockingOverlay() {
     return <BlacklistedScreen />;
   }
 
+  if (blockingType === 'account_deleted') {
+    return <AccountDeletedScreen />;
+  }
+
+  if (blockingType === 'backend_unavailable') {
+    return <ServiceUnavailableScreen />;
+  }
+
   return null;
+}
+
+/** Redirect /subscription/:id → /subscriptions/:id preserving the param */
+function LegacySubscriptionRedirect() {
+  const { subscriptionId } = useParams<{ subscriptionId: string }>();
+  return <Navigate to={`/subscriptions/${subscriptionId}`} replace />;
 }
 
 function App() {
   useAnalyticsCounters();
-  const navigate = useNavigate();
-  const location = useLocation();
-  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
-  const isLoading = useAuthStore((state) => state.isLoading);
-
-  useEffect(() => {
-    if (!isInTelegramWebApp()) return;
-    if (isLoading) return;
-
-    const startParam = getTelegramStartParam();
-    if (!startParam || !startParam.startsWith('topup_result_')) return;
-
-    const method = startParam.slice('topup_result_'.length).trim().toLowerCase();
-    if (!method) return;
-
-    const redirectTarget = `/balance/top-up/result?method=${encodeURIComponent(method)}`;
-    const processedKey = `startapp-redirect:${startParam}`;
-
-    try {
-      if (sessionStorage.getItem(processedKey) === '1') {
-        return;
-      }
-      sessionStorage.setItem(processedKey, '1');
-    } catch {}
-
-    if (
-      location.pathname === '/balance/top-up/result' &&
-      location.search.includes(`method=${method}`)
-    ) {
-      return;
-    }
-
-    if (isAuthenticated) {
-      navigate(redirectTarget, { replace: true });
-      return;
-    }
-
-    navigate(`/tg?redirect=${encodeURIComponent(redirectTarget)}`, { replace: true });
-  }, [isAuthenticated, isLoading, location.pathname, location.search, navigate]);
+  useMiniAppPaymentReturn();
+  // Pulls site-verification tokens (Antilopay apay-tag etc.) from the bot
+  // backend and injects matching <meta> tags into document.head.
+  useSiteVerification();
+  // Клавиша «Готово» на экранной клавиатуре для всех полей, включая экран входа.
+  useDoneKey();
 
   return (
     <>
+      {/* Живёт над <Routes>: анимация фона не перезапускается при навигации */}
+      <BackgroundHost />
       <BlockingOverlay />
       <Routes>
         {/* Public routes */}
@@ -247,6 +308,9 @@ function App() {
         <Route path="/auth/oauth/callback" element={<OAuthCallback />} />
         <Route path="/verify-email" element={<VerifyEmail />} />
         <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="/offer" element={<PublicLegal doc="offer" />} />
+        <Route path="/privacy" element={<PublicLegal doc="privacy" />} />
+        <Route path="/recurrent-payments" element={<PublicLegal doc="recurrent" />} />
         <Route
           path="/merge/:mergeToken"
           element={
@@ -258,31 +322,41 @@ function App() {
         <Route
           path="/buy/success/:token"
           element={
-            <ErrorBoundary level="app">
-              <LazyPage>
-                <PurchaseSuccess />
-              </LazyPage>
-            </ErrorBoundary>
+            <LazyPage>
+              <PurchaseSuccess />
+            </LazyPage>
+          }
+        />
+        <Route
+          path="/buy/gift/:token"
+          element={
+            <LazyPage>
+              <GiftClaim />
+            </LazyPage>
+          }
+        />
+        <Route
+          path="/coupon/:token"
+          element={
+            <LazyPage>
+              <CouponStatus />
+            </LazyPage>
           }
         />
         <Route
           path="/buy/:slug"
           element={
-            <ErrorBoundary level="app">
-              <LazyPage>
-                <QuickPurchase />
-              </LazyPage>
-            </ErrorBoundary>
+            <LazyPage>
+              <QuickPurchase />
+            </LazyPage>
           }
         />
         <Route
           path="/auto-login"
           element={
-            <ErrorBoundary level="app">
-              <LazyPage>
-                <AutoLogin />
-              </LazyPage>
-            </ErrorBoundary>
+            <LazyPage>
+              <AutoLogin />
+            </LazyPage>
           }
         />
 
@@ -292,18 +366,48 @@ function App() {
           element={
             <ProtectedRoute>
               <LazyPage>
-                <Dashboard />
+                <HomeScreen />
               </LazyPage>
             </ProtectedRoute>
           }
         />
         <Route
-          path="/subscription"
+          path="/subscriptions"
           element={
             <ProtectedRoute>
               <LazyPage>
-                <Subscription />
+                <Subscriptions />
               </LazyPage>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/subscriptions/:subscriptionId"
+          element={
+            <ProtectedRoute>
+              <LazyPage>
+                <SubscriptionScreen />
+              </LazyPage>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/subscriptions/:subscriptionId/renew"
+          element={
+            <ProtectedRoute>
+              <LazyPage>
+                <RenewSubscription />
+              </LazyPage>
+            </ProtectedRoute>
+          }
+        />
+        {/* Legacy redirects for backward compatibility */}
+        <Route path="/subscription/:subscriptionId" element={<LegacySubscriptionRedirect />} />
+        <Route
+          path="/subscription"
+          element={
+            <ProtectedRoute>
+              <Navigate to="/subscriptions" replace />
             </ProtectedRoute>
           }
         />
@@ -351,11 +455,21 @@ function App() {
           path="/balance/top-up/result"
           element={
             <ProtectedRoute withLayout={false}>
-              <ErrorBoundary level="app">
-                <LazyPage>
-                  <TopUpResult />
-                </LazyPage>
-              </ErrorBoundary>
+              <LazyPage>
+                <TopUpResult />
+              </LazyPage>
+            </ProtectedRoute>
+          }
+        />
+        {/* Path-based method variant: some providers (Lava) reject return URLs that carry a
+            query string, so the method is encoded in the path instead of ?method=. */}
+        <Route
+          path="/balance/top-up/result/:method"
+          element={
+            <ProtectedRoute withLayout={false}>
+              <LazyPage>
+                <TopUpResult />
+              </LazyPage>
             </ProtectedRoute>
           }
         />
@@ -482,25 +596,21 @@ function App() {
         <Route
           path="/gift"
           element={
-            <ErrorBoundary level="app">
-              <ProtectedRoute>
-                <LazyPage>
-                  <GiftSubscription />
-                </LazyPage>
-              </ProtectedRoute>
-            </ErrorBoundary>
+            <ProtectedRoute>
+              <LazyPage>
+                <GiftSubscription />
+              </LazyPage>
+            </ProtectedRoute>
           }
         />
         <Route
           path="/gift/result"
           element={
-            <ErrorBoundary level="app">
-              <ProtectedRoute>
-                <LazyPage>
-                  <GiftResult />
-                </LazyPage>
-              </ProtectedRoute>
-            </ErrorBoundary>
+            <ProtectedRoute>
+              <LazyPage>
+                <GiftResult />
+              </LazyPage>
+            </ProtectedRoute>
           }
         />
         <Route
@@ -529,6 +639,16 @@ function App() {
             <ProtectedRoute>
               <LazyPage>
                 <NewsArticlePage />
+              </LazyPage>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/info/:slug"
+          element={
+            <ProtectedRoute>
+              <LazyPage>
+                <InfoPageView />
               </LazyPage>
             </ProtectedRoute>
           }
@@ -565,12 +685,35 @@ function App() {
             </PermissionRoute>
           }
         />
+        {/* Deep-link target for admin ticket notification buttons (bot issue #2988):
+            opens a specific ticket directly. Static "/settings" above out-ranks
+            this dynamic segment in react-router, so there is no conflict. */}
+        <Route
+          path="/admin/tickets/:ticketId"
+          element={
+            <PermissionRoute permission="tickets:read">
+              <LazyPage>
+                <AdminTickets />
+              </LazyPage>
+            </PermissionRoute>
+          }
+        />
         <Route
           path="/admin/settings"
           element={
             <PermissionRoute permission="settings:read">
               <LazyPage>
                 <AdminSettings />
+              </LazyPage>
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/admin/grace-access"
+          element={
+            <PermissionRoute permission="settings:read">
+              <LazyPage>
+                <AdminGraceAccess />
               </LazyPage>
             </PermissionRoute>
           }
@@ -706,6 +849,46 @@ function App() {
           }
         />
         <Route
+          path="/admin/dpichecker"
+          element={
+            <PermissionRoute permission="dpichecker:read">
+              <LazyPage>
+                <AdminDpiChecker />
+              </LazyPage>
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/admin/reachability"
+          element={
+            <PermissionRoute permission="reachability:read">
+              <LazyPage>
+                <AdminReachability />
+              </LazyPage>
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/admin/reachability/history"
+          element={
+            <PermissionRoute permission="reachability:read">
+              <LazyPage>
+                <AdminReachabilityHistory />
+              </LazyPage>
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/admin/reachability/other"
+          element={
+            <PermissionRoute permission="reachability:read">
+              <LazyPage>
+                <AdminReachabilityOther />
+              </LazyPage>
+            </PermissionRoute>
+          }
+        />
+        <Route
           path="/admin/broadcasts"
           element={
             <PermissionRoute permission="broadcasts:read">
@@ -751,6 +934,36 @@ function App() {
             <PermissionRoute permission="promocodes:read">
               <LazyPage>
                 <AdminPromocodeCreate />
+              </LazyPage>
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/admin/coupons"
+          element={
+            <PermissionRoute permission="coupons:read">
+              <LazyPage>
+                <AdminCoupons />
+              </LazyPage>
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/admin/coupons/create"
+          element={
+            <PermissionRoute permission="coupons:create">
+              <LazyPage>
+                <AdminCouponCreate />
+              </LazyPage>
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/admin/coupons/:id"
+          element={
+            <PermissionRoute permission="coupons:read">
+              <LazyPage>
+                <AdminCouponDetail />
               </LazyPage>
             </PermissionRoute>
           }
@@ -856,6 +1069,19 @@ function App() {
           }
         />
         <Route
+          path="/admin/partners/referral-levels"
+          element={
+            /* Право совпадает с тем, что требуют сами эндпоинты уровней:
+               с одним partners:read страница открывалась и падала в общую
+               ошибку загрузки, не сообщая, что дело в правах. */
+            <PermissionRoute permission="partners:settings">
+              <LazyPage>
+                <AdminReferralLevels />
+              </LazyPage>
+            </PermissionRoute>
+          }
+        />
+        <Route
           path="/admin/partners/applications/:id/review"
           element={
             <PermissionRoute permission="partners:read">
@@ -900,7 +1126,9 @@ function App() {
           element={
             <PermissionRoute permission="partners:read">
               <LazyPage>
-                <AdminPartnerDetail />
+                <RemountOnParam name="userId">
+                  <AdminPartnerDetail />
+                </RemountOnParam>
               </LazyPage>
             </PermissionRoute>
           }
@@ -941,6 +1169,26 @@ function App() {
             <PermissionRoute permission="users:read">
               <LazyPage>
                 <AdminUsers />
+              </LazyPage>
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/admin/users/operations"
+          element={
+            <ProtectedRoute>
+              <PermissionRoute permission="users:read">
+                <AdminUserOperations />
+              </PermissionRoute>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/bulk-actions"
+          element={
+            <PermissionRoute permission="bulk_actions:read">
+              <LazyPage>
+                <AdminBulkActions />
               </LazyPage>
             </PermissionRoute>
           }
@@ -1080,7 +1328,9 @@ function App() {
           element={
             <PermissionRoute permission="users:read">
               <LazyPage>
-                <AdminUserDetail />
+                <RemountOnParam name="id">
+                  <AdminUserDetail />
+                </RemountOnParam>
               </LazyPage>
             </PermissionRoute>
           }
@@ -1126,6 +1376,36 @@ function App() {
           }
         />
         <Route
+          path="/admin/reminders"
+          element={
+            <PermissionRoute permission="user_reminders:read">
+              <LazyPage>
+                <AdminReminders />
+              </LazyPage>
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/admin/reminders/create"
+          element={
+            <PermissionRoute permission="user_reminders:create">
+              <LazyPage>
+                <AdminReminderEdit />
+              </LazyPage>
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/admin/reminders/:id/edit"
+          element={
+            <PermissionRoute permission="user_reminders:edit">
+              <LazyPage>
+                <AdminReminderEdit />
+              </LazyPage>
+            </PermissionRoute>
+          }
+        />
+        <Route
           path="/admin/channel-subscriptions"
           element={
             <PermissionRoute permission="channels:read">
@@ -1135,17 +1415,6 @@ function App() {
             </PermissionRoute>
           }
         />
-        <Route
-          path="/admin/email-templates/preview/:type/:lang"
-          element={
-            <PermissionRoute permission="email_templates:read">
-              <LazyPage>
-                <AdminEmailTemplatePreview />
-              </LazyPage>
-            </PermissionRoute>
-          }
-        />
-
         {/* RBAC routes */}
         <Route
           path="/admin/roles"
@@ -1249,12 +1518,65 @@ function App() {
           }
         />
 
+        {/* Info pages admin routes */}
+        <Route
+          path="/admin/info-pages"
+          element={
+            <PermissionRoute permission="info_pages:read">
+              <LazyPage>
+                <AdminInfoPages />
+              </LazyPage>
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/admin/info-pages/create"
+          element={
+            <PermissionRoute permission="info_pages:edit">
+              <LazyPage>
+                <AdminInfoPageEditor />
+              </LazyPage>
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/admin/info-pages/:id/edit"
+          element={
+            <PermissionRoute permission="info_pages:edit">
+              <LazyPage>
+                <AdminInfoPageEditor />
+              </LazyPage>
+            </PermissionRoute>
+          }
+        />
+        <Route
+          path="/admin/legal-pages"
+          element={
+            <PermissionRoute permission="info_pages:read">
+              <LazyPage>
+                <AdminLegalPages />
+              </LazyPage>
+            </PermissionRoute>
+          }
+        />
+
         <Route
           path="/admin/audit-log"
           element={
             <PermissionRoute permission="audit_log:read">
               <LazyPage>
                 <AdminAuditLog />
+              </LazyPage>
+            </PermissionRoute>
+          }
+        />
+
+        <Route
+          path="/admin/system-errors"
+          element={
+            <PermissionRoute permission="system_errors:read">
+              <LazyPage>
+                <AdminSystemErrors />
               </LazyPage>
             </PermissionRoute>
           }

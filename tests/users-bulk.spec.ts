@@ -139,11 +139,7 @@ test('selection persists across pages, header becomes indeterminate, filters res
   await expect(page.getByText('Выбрано пользователей: 1', { exact: true })).toBeVisible();
   const header = page.getByRole('checkbox', { name: 'Выбрать всех на этой странице' });
   await expect(header).toHaveJSProperty('indeterminate', true);
-  await page
-    .locator('button')
-    .filter({ has: page.locator('svg path[d="M8.25 4.5l7.5 7.5-7.5 7.5"]') })
-    .last()
-    .click();
+  await page.getByRole('button', { name: 'Следующая страница', exact: true }).click();
   await page.getByRole('checkbox', { name: 'Выбрать User 21', exact: true }).check();
   await expect(page.getByText('Выбрано пользователей: 2', { exact: true })).toBeVisible();
   await page.getByText('Расширенные фильтры', { exact: true }).click();
