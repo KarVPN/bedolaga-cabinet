@@ -18,9 +18,20 @@ Dockerfile
 .dockerignore
 
 # Environment files
-.env
-.env.local
-.env.*.local
+**/.env
+**/.env.*
+**/.npmrc
+**/.ssh
+**/.aws
+**/*.pem
+**/*.key
+**/id_rsa
+**/id_ed25519
+.github
+.husky
+.claude
+.codex
+.agents
 
 # Test files
 coverage
@@ -29,6 +40,10 @@ coverage
 *.spec.ts
 *.spec.tsx
 __tests__
+tests
+test-results
+playwright-report
+playwright.config.ts
 
 # Documentation
 README.md

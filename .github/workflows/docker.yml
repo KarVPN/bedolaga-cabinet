@@ -3,14 +3,25 @@ name: Docker Build
 on:
   push:
     branches: [main]
-    tags:
-      - 'v*'
+    tags: ['v*']
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: cabinet-image-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+# These settings are public: they are compiled into the browser's JavaScript.
+# Never add bot tokens, database passwords or server .env files here.
 env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  VITE_API_URL: ${{ vars.VITE_API_URL || '/api' }}
+  VITE_TELEGRAM_BOT_USERNAME: ${{ vars.VITE_TELEGRAM_BOT_USERNAME || 'KarVPNBot' }}
+  VITE_APP_NAME: ${{ vars.VITE_APP_NAME || 'KarVPN' }}
+  VITE_APP_LOGO: ${{ vars.VITE_APP_LOGO || 'K' }}
 
 jobs:
   lint:
@@ -18,51 +29,121 @@ jobs:
 
   build-and-push:
     needs: lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Validate public build settings and resolve image name
+        id: image
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          for name in ('VITE_API_URL', 'VITE_TELEGRAM_BOT_USERNAME', 'VITE_APP_NAME', 'VITE_APP_LOGO'):
+              value = os.environ[name]
+              if not value.strip() or any(c in value for c in '\r\n\0'):
+                  raise SystemExit(f'{name} must be a nonempty, single-line public setting')
+          if not re.fullmatch(r'[A-Za-z0-9_]{5,32}', os.environ['VITE_TELEGRAM_BOT_USERNAME']):
+              raise SystemExit('Set the public bot username without @; never use a bot token')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f"name=ghcr.io/{os.environ['GITHUB_REPOSITORY'].lower()}\n")
+          PY
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to Container Registry
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ steps.image.outputs.name }}
           tags: |
-            type=ref,event=branch
+            type=ref,event=tag
             type=ref,event=pr
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=sha
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=long
+            type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
+          labels: |
+            io.karvpn.cabinet.api-url=${{ env.VITE_API_URL }}
+            io.karvpn.cabinet.telegram-bot-username=${{ env.VITE_TELEGRAM_BOT_USERNAME }}
+            io.karvpn.cabinet.app-name=${{ env.VITE_APP_NAME }}
+            io.karvpn.cabinet.app-logo=${{ env.VITE_APP_LOGO }}
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
+      - name: Build image on the GitHub runner
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
-          push: ${{ github.event_name != 'pull_request' }}
+          platforms: linux/amd64
+          load: true
+          push: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=cabinet-amd64
+          cache-to: type=gha,scope=cabinet-amd64,mode=max
           build-args: |
-            VITE_API_URL=/api
-            VITE_TELEGRAM_BOT_USERNAME=
-            VITE_APP_NAME=Cabinet
-            VITE_APP_LOGO=V
+            VITE_API_URL=${{ env.VITE_API_URL }}
+            VITE_TELEGRAM_BOT_USERNAME=${{ env.VITE_TELEGRAM_BOT_USERNAME }}
+            VITE_APP_NAME=${{ env.VITE_APP_NAME }}
+            VITE_APP_LOGO=${{ env.VITE_APP_LOGO }}
+
+      - name: Smoke test the image before publication
+        env:
+          IMAGE_ID: ${{ steps.build.outputs.imageid }}
+        shell: bash
+        run: |
+          docker run -d --name cabinet-image-smoke -p 127.0.0.1:18080:80 "$IMAGE_ID"
+          trap 'docker rm -f cabinet-image-smoke >/dev/null' EXIT
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:18080/ -o /tmp/cabinet-index.html; then
+              break
+            fi
+            sleep 1
+          done
+          grep -q 'id="root"' /tmp/cabinet-index.html
+          docker exec cabinet-image-smoke wget -q --spider http://127.0.0.1:80/
+          unexpected=$(docker exec cabinet-image-smoke find /usr/share/nginx/html -type f \( -name '.env*' -o -name '*.pem' -o -name '*.key' \))
+          test -z "$unexpected" || { echo 'Unexpected configuration/key file in static assets'; exit 1; }
+
+      # Registry credentials are introduced only after the image has been built.
+      - name: Log in to GHCR for publication
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish the tested image and deployment reference
+        if: github.event_name != 'pull_request'
+        env:
+          IMAGE_NAME: ${{ steps.image.outputs.name }}
+          IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+        shell: bash
+        run: |
+          while IFS= read -r tag; do
+            docker push "$tag"
+          done <<< "$IMAGE_TAGS"
+          image=$(docker image inspect "$IMAGE_NAME:sha-$GITHUB_SHA" --format '{{index .RepoDigests 0}}')
+          {
+            echo '## Cabinet image ready'
+            echo
+            echo "Platform: linux/amd64. Commit: $GITHUB_SHA."
+            echo
+            echo 'Use this immutable reference in Ansible:'
+            echo '```yaml'
+            echo "bedolaga_cabinet_image: $image"
+            echo '```'
+            echo
+            echo 'Private GHCR package: the VPS needs a token with read:packages.'
+            echo 'The token is used for pulling only; it is not part of the image.'
+          } >> "$GITHUB_STEP_SUMMARY"
