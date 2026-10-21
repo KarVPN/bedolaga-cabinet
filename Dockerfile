@@ -1,5 +1,5 @@
 # Stage 1: Build the React application
-FROM node:22-alpine AS builder
+FROM node:24-alpine AS builder
 
 WORKDIR /app
 
@@ -12,6 +12,7 @@ RUN HUSKY=0 npm ci
 # Copy source code
 # Only build inputs: no .env, Git credentials, workflows or server configuration.
 COPY index.html vite.config.ts tsconfig*.json postcss.config.js tailwind.config.* ./
+COPY vite-plugins ./vite-plugins
 COPY src ./src
 COPY public ./public
 

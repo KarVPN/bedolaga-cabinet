@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { mergeOperationSnapshot } from '../../utils/bulkOperationState';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   userBulkApi,
   type BulkAction,
@@ -10,7 +11,8 @@ import { usePermissionStore } from '../../store/permissions';
 import { getApiErrorMessage } from '../../utils/api-error';
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '../primitives/Dialog';
 
-const button = 'rounded-lg border border-dark-600 px-3 py-2 text-sm disabled:opacity-40';
+const button =
+  'max-w-full whitespace-normal break-words rounded-lg border border-dark-600 px-3 py-2 text-sm disabled:opacity-40';
 const finished = (op: BulkOperation) =>
   ['completed', 'cancelled', 'needs_review'].includes(op.state);
 const labels: Record<string, string> = {
@@ -50,6 +52,9 @@ export function UserBulkActions({
   const [days, setDays] = useState('7');
   const [preview, setPreview] = useState<BulkOperation | null>(null);
   const [operation, setOperation] = useState<BulkOperation | null>(null);
+  const updateOperation = useCallback((next: BulkOperation) => {
+    setOperation((previous) => mergeOperationSnapshot(previous, next));
+  }, []);
   const [recent, setRecent] = useState<BulkOperation[]>([]);
   const [busy, setBusy] = useState(false);
   const [preparing, setPreparing] = useState(false);
@@ -85,7 +90,7 @@ export function UserBulkActions({
         setRecent(history);
         if (history[0]) {
           const current = await userBulkApi.get(history[0].id);
-          if (active) setOperation(current);
+          if (active) updateOperation(current);
         }
       })
       .catch((err) => {
@@ -94,7 +99,7 @@ export function UserBulkActions({
     return () => {
       active = false;
     };
-  }, [allowed]);
+  }, [allowed, updateOperation]);
 
   const operationId = operation?.id;
   const terminal = operation ? finished(operation) : false;
@@ -103,20 +108,14 @@ export function UserBulkActions({
     const controller = new AbortController();
     userBulkApi
       .watch(operationId, controller.signal, (next) => {
-        if (!controller.signal.aborted)
-          setOperation((previous) =>
-            previous?.id === next.id &&
-            Date.parse(previous.updated_at) > Date.parse(next.updated_at)
-              ? previous
-              : next,
-          );
+        if (!controller.signal.aborted) updateOperation(next);
       })
       .catch(() => {
         if (!controller.signal.aborted)
           setError('Поток прогресса прерван. Обновите состояние перед продолжением.');
       });
     return () => controller.abort();
-  }, [allowed, operationId, terminal]);
+  }, [allowed, operationId, terminal, updateOperation]);
 
   if (!allowed) return null;
   const selectedCount = allSelection?.total ?? selected.size;
@@ -160,14 +159,14 @@ export function UserBulkActions({
     setBusy(true);
     setError('');
     setPreview(null);
-    setOperation(op);
+    updateOperation(op);
     setErrors(null);
     onClear();
     let current = op;
     try {
       while (mounted.current && continueBatches.current && !finished(current)) {
         const next = await userBulkApi.run(current.id);
-        if (mounted.current) setOperation(next);
+        if (mounted.current) updateOperation(next);
         // Uncertain outcomes require an explicit operator decision before more work.
         if (
           next.uncertain > current.uncertain ||
@@ -185,7 +184,7 @@ export function UserBulkActions({
           ),
         );
         try {
-          setOperation(await userBulkApi.get(current.id));
+          updateOperation(await userBulkApi.get(current.id));
         } catch {
           /* journal survives connection loss */
         }
@@ -200,7 +199,7 @@ export function UserBulkActions({
     continueBatches.current = false;
     setCancelDialog(false);
     try {
-      setOperation(await userBulkApi.cancel(operation.id));
+      updateOperation(await userBulkApi.cancel(operation.id));
     } catch (err) {
       setError(getApiErrorMessage(err, 'Не удалось отменить оставшихся'));
     }
@@ -216,7 +215,7 @@ export function UserBulkActions({
   }
 
   return (
-    <div className="mb-5 space-y-3">
+    <div className="mb-5 min-w-0 space-y-3">
       {error && (
         <p
           role="alert"
@@ -276,7 +275,7 @@ export function UserBulkActions({
               className={button}
               onClick={async () => {
                 try {
-                  setOperation(await userBulkApi.get(operation.id));
+                  updateOperation(await userBulkApi.get(operation.id));
                   setError('');
                 } catch (err) {
                   setError(getApiErrorMessage(err, 'Не удалось обновить состояние'));
@@ -321,12 +320,12 @@ export function UserBulkActions({
         <label className="block text-sm text-dark-300">
           Последние операции{' '}
           <select
-            className="ml-2 rounded-lg bg-dark-800 p-2"
+            className="mt-2 block w-full min-w-0 max-w-full rounded-lg bg-dark-800 p-2"
             value={operation?.id ?? ''}
             disabled={busy}
             onChange={async (e) => {
               try {
-                setOperation(await userBulkApi.get(e.target.value));
+                updateOperation(await userBulkApi.get(e.target.value));
                 setErrors(null);
               } catch (err) {
                 setError(getApiErrorMessage(err, 'Не удалось загрузить операцию'));

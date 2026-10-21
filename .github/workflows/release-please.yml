@@ -14,10 +14,36 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Calculate KarVPN revision
+        id: version
+        run: node scripts/karvpn-version.mjs
       - uses: googleapis/release-please-action@v4
         id: release
         with:
-          release-type: node
+          skip-github-pull-request: true
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+      # The Action ignores release-as in manifest mode; the pinned CLI supports it.
+      - name: Create or update the KarVPN release PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          KARVPN_VERSION: ${{ steps.version.outputs.version }}
+          NPM_CONFIG_IGNORE_SCRIPTS: 'true'
+        run: |
+          npx --yes --package=release-please@17.3.0 release-please release-pr \
+            --repo-url "$GITHUB_REPOSITORY" \
+            --target-branch "$GITHUB_REF_NAME" \
+            --config-file release-please-config.json \
+            --manifest-file .release-please-manifest.json \
+            --release-as "$KARVPN_VERSION" \
+            --token "$GH_TOKEN"
 
       # Tags created with GITHUB_TOKEN do not trigger other push workflows.
       - name: Build the released Docker image

@@ -1,25 +1,50 @@
-import { useState, useEffect, useRef, useCallback, memo } from 'react';
+import { uiLocale } from '@/utils/uiLocale';
+import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router';
+import { Navigate, useNavigate, useParams } from 'react-router';
 import { subscriptionApi } from '../api/subscription';
+import { WebBackButton } from '../components/WebBackButton';
 import TrafficProgressBar from '../components/dashboard/TrafficProgressBar';
 import { HoverBorderGradient } from '../components/ui/hover-border-gradient';
 import { useTrafficZone } from '../hooks/useTrafficZone';
 import { formatTraffic } from '../utils/formatTraffic';
 import { getGlassColors } from '../utils/glassTheme';
+import { copyToClipboard } from '../utils/clipboard';
 import { useTheme } from '../hooks/useTheme';
-import InsufficientBalancePrompt from '../components/InsufficientBalancePrompt';
-import { useCurrency } from '../hooks/useCurrency';
 import { useCloseOnSuccessNotification } from '../store/successNotification';
 import PurchaseCTAButton from '../components/subscription/PurchaseCTAButton';
-import { CopyIcon, CheckIcon } from '../components/icons';
-import { useHaptic } from '../platform';
+import { planTitle, showsAddonOptions } from '../utils/legacySubscription';
 import {
-  getErrorMessage,
-  getInsufficientBalanceError,
-  getFlagEmoji,
-} from '../utils/subscriptionHelpers';
+  CalendarIcon,
+  CheckIcon,
+  ClockIcon,
+  CopyIcon,
+  DevicesIcon,
+  DownloadIcon,
+  RefreshIcon,
+  TrashIcon,
+  WarningIcon,
+} from '../components/icons';
+import { useHaptic } from '../platform';
+import { resolveConnectionUrlForUi } from '../utils/connectionLink';
+import { getFlagEmoji } from '../utils/subscriptionHelpers';
+import Twemoji from '@/lib/twemoji';
+import { AutopayToggle } from '../components/subscription/manage/AutopayToggle';
+import { DailyPausePanel } from '../components/subscription/manage/DailyPausePanel';
+import {
+  canReissueLink,
+  ReissueLinkButton,
+} from '../components/subscription/manage/ReissueLinkButton';
+import { DevicesPanel } from '../components/subscription/manage/DevicesPanel';
+import { RecurringPanels } from '../components/subscription/manage/RecurringPanels';
+import { DeviceTopupSheet } from '../components/subscription/sheets/DeviceTopupSheet';
+import { DeviceReductionSheet } from '../components/subscription/sheets/DeviceReductionSheet';
+import { TrafficTopupSheet } from '../components/subscription/sheets/TrafficTopupSheet';
+import { ServerManagementSheet } from '../components/subscription/sheets/ServerManagementSheet';
+import { DeleteSubscriptionSheet } from '../components/subscription/sheets/DeleteSubscriptionSheet';
+import { PageSkeleton, Skeleton } from '@/components/ui/skeleton';
+import { safeLocal } from '../utils/safeStorage';
 
 /** Isolated countdown so 1s interval doesn't re-render the whole page */
 const CountdownTimer = memo(function CountdownTimer({
@@ -53,7 +78,7 @@ const CountdownTimer = memo(function CountdownTimer({
   const isExpired = !isActive;
   const isUrgent = countdown.days <= 3;
 
-  const formattedDate = new Date(endDate).toLocaleDateString(undefined, {
+  const formattedDate = new Date(endDate).toLocaleDateString(uiLocale(), {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
@@ -75,7 +100,7 @@ const CountdownTimer = memo(function CountdownTimer({
             : `1px solid ${g.innerBorder}`,
       }}
     >
-      <div className="mb-2 flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-dark-50/35">
+      <div className="mb-2 flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-dark-400">
         <div
           className="flex h-6 w-6 items-center justify-center rounded-[7px]"
           style={{
@@ -86,75 +111,76 @@ const CountdownTimer = memo(function CountdownTimer({
                 : g.hoverBg,
           }}
         >
-          <svg
-            width="13"
-            height="13"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke={isExpired ? '#FF3B5C' : isUrgent ? '#FFB800' : g.textSecondary}
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
+          <span
+            style={{
+              color: isExpired
+                ? 'rgb(var(--color-critical-500))'
+                : isUrgent
+                  ? 'rgb(var(--color-urgent-400))'
+                  : g.textSecondary,
+            }}
           >
-            <rect x="3" y="4" width="18" height="18" rx="2" />
-            <path d="M16 2v4M8 2v4M3 10h18" />
-          </svg>
+            <CalendarIcon className="h-[13px] w-[13px]" />
+          </span>
         </div>
         {t('dashboard.remaining')}
       </div>
       {isExpired ? (
-        <div className="text-[18px] font-bold tracking-tight" style={{ color: '#FF3B5C' }}>
+        <div
+          className="text-[18px] font-bold tracking-tight"
+          style={{ color: 'rgb(var(--color-critical-500))' }}
+        >
           {t('subscription.expired')}
         </div>
       ) : (
-        <div className="flex items-baseline justify-between">
+        <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
+          {/* На телефоне дата уходит на свою строку: рядом с таймером ей не хватало места, и она ломалась посреди «23 сент. / 2026 г.» */}
           <div className="flex items-baseline gap-1 font-mono tabular-nums">
             {countdown.days > 0 && (
               <>
                 <span
                   className="text-[20px] font-bold tracking-tight"
-                  style={{ color: isUrgent ? '#FFB800' : g.text }}
+                  style={{ color: isUrgent ? 'rgb(var(--color-urgent-400))' : g.text }}
                 >
                   {countdown.days}
                 </span>
-                <span className="mr-1 text-[10px] font-medium text-dark-50/25">
+                <span className="mr-1 text-[10px] font-medium text-dark-400">
                   {t('subscription.daysShort')}
                 </span>
               </>
             )}
             <span
               className="text-[20px] font-bold tracking-tight"
-              style={{ color: isUrgent ? '#FFB800' : g.text }}
+              style={{ color: isUrgent ? 'rgb(var(--color-urgent-400))' : g.text }}
             >
               {String(countdown.hours).padStart(2, '0')}
             </span>
             <span
               className="mx-[-1px] text-[16px] font-bold opacity-30"
-              style={{ color: isUrgent ? '#FFB800' : g.text }}
+              style={{ color: isUrgent ? 'rgb(var(--color-urgent-400))' : g.text }}
             >
               :
             </span>
             <span
               className="text-[20px] font-bold tracking-tight"
-              style={{ color: isUrgent ? '#FFB800' : g.text }}
+              style={{ color: isUrgent ? 'rgb(var(--color-urgent-400))' : g.text }}
             >
               {String(countdown.minutes).padStart(2, '0')}
             </span>
             <span
               className="mx-[-1px] text-[16px] font-bold opacity-30"
-              style={{ color: isUrgent ? '#FFB800' : g.text }}
+              style={{ color: isUrgent ? 'rgb(var(--color-urgent-400))' : g.text }}
             >
               :
             </span>
             <span
               className="text-[20px] font-bold tracking-tight"
-              style={{ color: isUrgent ? '#FFB800' : g.text }}
+              style={{ color: isUrgent ? 'rgb(var(--color-urgent-400))' : g.text }}
             >
               {String(countdown.seconds).padStart(2, '0')}
             </span>
           </div>
-          <div className="text-[10px] font-medium text-dark-50/25">
+          <div className="text-[10px] font-medium text-dark-400">
             {t('subscription.expiresAt')}: {formattedDate}
           </div>
         </div>
@@ -166,15 +192,14 @@ const CountdownTimer = memo(function CountdownTimer({
 export default function Subscription() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const { formatAmount, currencySymbol } = useCurrency();
   const navigate = useNavigate();
+  const { subscriptionId: subIdParam } = useParams<{ subscriptionId?: string }>();
+  const subscriptionId = subIdParam ? parseInt(subIdParam, 10) : undefined;
   const { isDark } = useTheme();
   const g = getGlassColors(isDark);
   const haptic = useHaptic();
   const [copied, setCopied] = useState(false);
-
-  // Helper to format price from kopeks
-  const formatPrice = (kopeks: number) => `${formatAmount(kopeks / 100)} ${currencySymbol}`;
+  const [showDeleteSheet, setShowDeleteSheet] = useState(false);
 
   // Device/traffic topup state
   const [showDeviceTopup, setShowDeviceTopup] = useState(false);
@@ -188,74 +213,88 @@ export default function Subscription() {
 
   // Traffic refresh state
   const [trafficRefreshCooldown, setTrafficRefreshCooldown] = useState(0);
+
+  // Revoke (reissue) cooldown state
   const [trafficData, setTrafficData] = useState<{
     traffic_used_gb: number;
     traffic_used_percent: number;
     is_unlimited: boolean;
   } | null>(null);
 
+  // Detect multi-tariff mode from cached subscriptions-list
+  const { data: multiSubData } = useQuery({
+    queryKey: ['subscriptions-list'],
+    queryFn: () => subscriptionApi.getSubscriptions(),
+    staleTime: 60_000,
+  });
+  const isMultiTariff = multiSubData?.multi_tariff_enabled ?? false;
+
   const { data: subscriptionResponse, isLoading } = useQuery({
-    queryKey: ['subscription'],
-    queryFn: subscriptionApi.getSubscription,
+    queryKey: ['subscription', subscriptionId],
+    queryFn: () => subscriptionApi.getSubscription(subscriptionId),
     retry: false,
-    staleTime: 0, // Always refetch to get latest data
+    staleTime: 0,
     refetchOnMount: 'always',
+  });
+  const { data: connectionLink, isLoading: isConnectionLinkLoading } = useQuery({
+    queryKey: ['connection-link', subscriptionId],
+    queryFn: () => subscriptionApi.getConnectionLink(subscriptionId),
+    retry: false,
+    staleTime: 0,
   });
 
   // Extract subscription from response (null if no subscription)
   const subscription = subscriptionResponse?.subscription ?? null;
+  const displayedConnectionUrl = useMemo(
+    () =>
+      resolveConnectionUrlForUi({
+        mode: connectionLink?.connect_mode,
+        happSchemeLink: connectionLink?.happ_scheme_link,
+        displayLink: connectionLink?.display_link,
+        subscriptionUrl: connectionLink?.subscription_url,
+        happCryptLink: connectionLink?.happ_cryptolink,
+        happCryptoLink: connectionLink?.happ_crypto_link,
+        happLink: connectionLink?.happ_link,
+        fallbackUrl: isConnectionLinkLoading ? null : (subscription?.subscription_url ?? null),
+      }),
+    [
+      connectionLink?.connect_mode,
+      connectionLink?.display_link,
+      connectionLink?.happ_cryptolink,
+      connectionLink?.happ_crypto_link,
+      connectionLink?.happ_link,
+      connectionLink?.happ_scheme_link,
+      connectionLink?.subscription_url,
+      isConnectionLinkLoading,
+      subscription?.subscription_url,
+    ],
+  );
+  const shouldHideConnectionLink =
+    subscription?.hide_subscription_link || connectionLink?.hide_link;
 
   // Traffic zone (theme-aware) — called unconditionally at top level
   const usedPercent = trafficData?.traffic_used_percent ?? subscription?.traffic_used_percent ?? 0;
   const zone = useTrafficZone(usedPercent);
 
   // Purchase options (needed for balance_kopeks in device/traffic/server management)
-  const { data: purchaseOptions } = useQuery({
-    queryKey: ['purchase-options'],
-    queryFn: subscriptionApi.getPurchaseOptions,
+  const purchaseOptionsQuery = useQuery({
+    queryKey: ['purchase-options', subscriptionId],
+    queryFn: () => subscriptionApi.getPurchaseOptions(subscriptionId),
     staleTime: 0,
     refetchOnMount: 'always',
   });
-
-  const autopayMutation = useMutation({
-    mutationFn: (enabled: boolean) => subscriptionApi.updateAutopay(enabled),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['subscription'] });
-    },
-  });
+  const purchaseOptions = purchaseOptionsQuery.data;
 
   // Devices query
-  const { data: devicesData, isLoading: devicesLoading } = useQuery({
-    queryKey: ['devices'],
-    queryFn: subscriptionApi.getDevices,
+  // Счётчик подключённых устройств в шапке. Сам список живёт в <DevicesPanel>
+  // и ходит по тому же ключу, так что второго запроса не возникает.
+  const { data: devicesData } = useQuery({
+    queryKey: ['devices', subscriptionId],
+    queryFn: () => subscriptionApi.getDevices(subscriptionId),
     enabled: !!subscription,
   });
 
-  // Delete device mutation
-  const deleteDeviceMutation = useMutation({
-    mutationFn: (hwid: string) => subscriptionApi.deleteDevice(hwid),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['devices'] });
-    },
-  });
-
-  // Delete all devices mutation
-  const deleteAllDevicesMutation = useMutation({
-    mutationFn: () => subscriptionApi.deleteAllDevices(),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['devices'] });
-    },
-  });
-
   // Pause subscription mutation
-  const pauseMutation = useMutation({
-    mutationFn: () => subscriptionApi.togglePause(),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['subscription'] });
-      queryClient.invalidateQueries({ queryKey: ['balance'] });
-    },
-  });
-
   // Auto-close all modals/forms when success notification appears
   const handleCloseAllModals = useCallback(() => {
     setShowDeviceTopup(false);
@@ -265,113 +304,28 @@ export default function Subscription() {
   }, []);
   useCloseOnSuccessNotification(handleCloseAllModals);
 
-  // Device price query
-  const { data: devicePriceData } = useQuery({
-    queryKey: ['device-price', devicesToAdd],
-    queryFn: () => subscriptionApi.getDevicePrice(devicesToAdd),
-    enabled: showDeviceTopup && !!subscription,
-  });
+  // (device price + purchase moved into <DeviceTopupSheet>)
+  // (device reduction info + mutation moved into <DeviceReductionSheet>)
 
-  // Device purchase mutation
-  const devicePurchaseMutation = useMutation({
-    mutationFn: () => subscriptionApi.purchaseDevices(devicesToAdd),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['subscription'] });
-      queryClient.invalidateQueries({ queryKey: ['devices'] });
-      queryClient.invalidateQueries({ queryKey: ['device-price'] });
-      setShowDeviceTopup(false);
-      setDevicesToAdd(1);
-    },
-  });
-
-  // Device reduction info query
-  const { data: deviceReductionInfo } = useQuery({
-    queryKey: ['device-reduction-info'],
-    queryFn: subscriptionApi.getDeviceReductionInfo,
-    enabled: showDeviceReduction && !!subscription,
-  });
-
-  // Initialize target device limit when reduction info loads
-  useEffect(() => {
-    if (deviceReductionInfo && showDeviceReduction) {
-      setTargetDeviceLimit(
-        Math.max(
-          deviceReductionInfo.min_device_limit,
-          deviceReductionInfo.current_device_limit - 1,
-        ),
-      );
-    }
-  }, [deviceReductionInfo, showDeviceReduction]);
-
-  // Device reduction mutation
-  const deviceReductionMutation = useMutation({
-    mutationFn: () => subscriptionApi.reduceDevices(targetDeviceLimit),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['subscription'] });
-      queryClient.invalidateQueries({ queryKey: ['devices'] });
-      queryClient.invalidateQueries({ queryKey: ['device-reduction-info'] });
-      setShowDeviceReduction(false);
-    },
-  });
-
-  // Traffic packages query
-  const { data: trafficPackages } = useQuery({
-    queryKey: ['traffic-packages'],
-    queryFn: subscriptionApi.getTrafficPackages,
-    enabled: showTrafficTopup && !!subscription,
-  });
-
-  // Traffic purchase mutation
-  const trafficPurchaseMutation = useMutation({
-    mutationFn: (gb: number) => subscriptionApi.purchaseTraffic(gb),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['subscription'] });
-      setShowTrafficTopup(false);
-      setSelectedTrafficPackage(null);
-    },
-  });
-
-  // Countries/servers query
-  const { data: countriesData, isLoading: countriesLoading } = useQuery({
-    queryKey: ['countries'],
-    queryFn: subscriptionApi.getCountries,
-    enabled: showServerManagement && !!subscription && !subscription.is_trial,
-  });
-
-  // Initialize selected servers when data loads
-  useEffect(() => {
-    if (countriesData && showServerManagement) {
-      const connected = countriesData.countries.filter((c) => c.is_connected).map((c) => c.uuid);
-      setSelectedServersToUpdate(connected);
-    }
-  }, [countriesData, showServerManagement]);
-
-  // Countries update mutation
-  const updateCountriesMutation = useMutation({
-    mutationFn: (countries: string[]) => subscriptionApi.updateCountries(countries),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['subscription'] });
-      queryClient.invalidateQueries({ queryKey: ['countries'] });
-      setShowServerManagement(false);
-    },
-  });
+  // (traffic packages + purchase moved into <TrafficTopupSheet>)
+  // (countries query + update mutation moved into <ServerManagementSheet>)
 
   // Traffic refresh mutation
   const refreshTrafficMutation = useMutation({
-    mutationFn: subscriptionApi.refreshTraffic,
+    mutationFn: () => subscriptionApi.refreshTraffic(subscriptionId),
     onSuccess: (data) => {
       setTrafficData({
         traffic_used_gb: data.traffic_used_gb,
         traffic_used_percent: data.traffic_used_percent,
         is_unlimited: data.is_unlimited,
       });
-      localStorage.setItem('traffic_refresh_ts', Date.now().toString());
+      safeLocal.setItem(`traffic_refresh_ts_${subscriptionId ?? 'default'}`, Date.now().toString());
       if (data.rate_limited && data.retry_after_seconds) {
         setTrafficRefreshCooldown(data.retry_after_seconds);
       } else {
         setTrafficRefreshCooldown(30);
       }
-      queryClient.invalidateQueries({ queryKey: ['subscription'] });
+      queryClient.invalidateQueries({ queryKey: ['subscription', subscriptionId] });
     },
     onError: (error: {
       response?: { status?: number; headers?: { get?: (key: string) => string } };
@@ -401,7 +355,7 @@ export default function Subscription() {
     if (hasAutoRefreshed.current) return;
     hasAutoRefreshed.current = true;
 
-    const lastRefresh = localStorage.getItem('traffic_refresh_ts');
+    const lastRefresh = safeLocal.getItem(`traffic_refresh_ts_${subscriptionId ?? 'default'}`);
     const now = Date.now();
     const cacheMs = 30 * 1000;
 
@@ -415,27 +369,61 @@ export default function Subscription() {
     }
 
     refreshTrafficMutation.mutate();
-  }, [subscription, refreshTrafficMutation]);
+  }, [subscription, refreshTrafficMutation, subscriptionId]);
 
   const copyUrl = () => {
-    if (subscription?.subscription_url) {
-      navigator.clipboard.writeText(subscription.subscription_url);
+    if (displayedConnectionUrl) {
+      void copyToClipboard(displayedConnectionUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
   };
 
+  // In multi-tariff mode without a specific subscription ID, redirect to list
+  if (isMultiTariff && !subscriptionId && !isLoading) {
+    return <Navigate to="/subscriptions" replace />;
+  }
+
   if (isLoading) {
     return (
-      <div className="flex min-h-64 items-center justify-center">
-        <div className="h-10 w-10 animate-spin rounded-full border-2 border-accent-500 border-t-transparent" />
+      <PageSkeleton leading={1} titleWidth="w-48">
+        <Skeleton variant="card" className="h-64" />
+        <Skeleton variant="card" count={2} className="h-20" />
+      </PageSkeleton>
+    );
+  }
+
+  if (!subscription && subscriptionId) {
+    return (
+      <div className="mx-auto max-w-lg p-4 text-center">
+        <div className="mb-4 text-4xl">😕</div>
+        <h2 className="mb-2 text-xl font-bold text-dark-50">
+          {t('subscription.notFound', 'Подписка не найдена')}
+        </h2>
+        <p className="mb-4 text-sm text-dark-50/60">
+          {t('subscription.notFoundDesc', 'Возможно, подписка была удалена или не существует')}
+        </p>
+        <button
+          onClick={() => navigate('/subscriptions')}
+          className="rounded-xl bg-accent-500 px-6 py-2.5 text-sm font-medium text-on-accent"
+        >
+          {t('subscription.backToList', 'Мои подписки')}
+        </button>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-dark-50 sm:text-3xl">{t('subscription.title')}</h1>
+      {/* Page title */}
+      <div className="flex items-center gap-3">
+        <WebBackButton to={isMultiTariff ? '/subscriptions' : '/'} />
+        <h1 className="text-2xl font-bold text-dark-50 sm:text-3xl">
+          {isMultiTariff && subscription?.tariff_name
+            ? subscription.tariff_name
+            : t('subscription.title')}
+        </h1>
+      </div>
 
       {/* Current Subscription */}
       {subscription ? (
@@ -449,7 +437,7 @@ export default function Subscription() {
 
           return (
             <div
-              className="relative overflow-hidden rounded-3xl backdrop-blur-xl"
+              className="relative overflow-hidden rounded-3xl lg:backdrop-blur-xl"
               style={{
                 background: g.cardBg,
                 border: subscription.is_trial
@@ -463,28 +451,13 @@ export default function Subscription() {
                 padding: '28px 28px 24px',
               }}
             >
-              {/* Trial shimmer border */}
-              {subscription.is_trial && (
-                <div
-                  className="pointer-events-none absolute inset-[-1px] animate-trial-glow rounded-3xl"
-                  aria-hidden="true"
-                />
-              )}
-
-              {/* Background glow */}
-              <div
-                className="pointer-events-none absolute"
-                style={{
-                  top: -60,
-                  right: -60,
-                  width: 200,
-                  height: 200,
-                  borderRadius: '50%',
-                  background: `radial-gradient(circle, ${zone.mainHex}${g.glowAlpha} 0%, transparent 70%)`,
-                  transition: 'background 0.8s ease',
-                }}
-                aria-hidden="true"
-              />
+              {/* Decorative ambient radial + trial shimmer border were
+                  removed: they carried no information, leaked zone/accent
+                  hue into pure decoration (violates DESIGN.md
+                  Tunable-but-Scarce + Status-Hue Lockout rules), and the
+                  same chrome was distilled out of SubscriptionCardActive
+                  earlier in this branch. Trial state is conveyed by the
+                  header badge. */}
 
               {/* ─── Header ─── */}
               <div className="mb-6 flex items-start justify-between">
@@ -510,13 +483,13 @@ export default function Subscription() {
 
                   {/* Plan name */}
                   <h2 className="text-lg font-bold tracking-tight text-dark-50">
-                    {subscription.tariff_name || t('subscription.currentPlan')}
+                    {planTitle(subscription, t)}
                   </h2>
                 </div>
 
                 {/* Status badge */}
                 <span
-                  className="rounded-full px-3 py-1 font-mono text-[10px] font-semibold uppercase tracking-wider"
+                  className="max-w-[55%] shrink-0 rounded-full px-3 py-1 text-center font-mono text-[10px] font-semibold uppercase tracking-wider"
                   style={{
                     background: subscription.is_active
                       ? `${zone.mainHex}15`
@@ -531,8 +504,8 @@ export default function Subscription() {
                     color: subscription.is_active
                       ? zone.mainHex
                       : subscription.is_limited
-                        ? '#FFB800'
-                        : '#FF3B5C',
+                        ? 'rgb(var(--color-urgent-400))'
+                        : 'rgb(var(--color-critical-500))',
                   }}
                 >
                   {subscription.is_active
@@ -562,24 +535,13 @@ export default function Subscription() {
                       className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px]"
                       style={{ background: 'rgba(255,184,0,0.12)' }}
                     >
-                      <svg
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="#FFB800"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        aria-hidden="true"
-                      >
-                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                        <line x1="12" y1="9" x2="12" y2="13" />
-                        <line x1="12" y1="17" x2="12.01" y2="17" />
-                      </svg>
+                      <WarningIcon className="h-4 w-4 text-urgent-400" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold" style={{ color: '#FFB800' }}>
+                      <p
+                        className="text-sm font-semibold"
+                        style={{ color: 'rgb(var(--color-urgent-400))' }}
+                      >
                         {t('subscription.trafficLimitedTitle')}
                       </p>
                       <p className="mt-1 text-xs text-dark-400">
@@ -605,19 +567,7 @@ export default function Subscription() {
                       className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px]"
                       style={{ background: 'rgba(var(--color-accent-400), 0.12)' }}
                     >
-                      <svg
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="rgb(var(--color-accent-400))"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        aria-hidden="true"
-                      >
-                        <path d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
+                      <ClockIcon className="h-4 w-4 text-accent-400" />
                     </div>
                     <div className="flex-1">
                       <div
@@ -626,7 +576,7 @@ export default function Subscription() {
                       >
                         {t('subscription.trialInfo.title')}
                       </div>
-                      <div className="mt-1 text-[12px] text-dark-50/40">
+                      <div className="mt-1 text-[12px] text-dark-400">
                         {t('subscription.trialInfo.description')}
                       </div>
                       <div className="mt-3 flex flex-wrap gap-4">
@@ -639,7 +589,7 @@ export default function Subscription() {
                               ? t('subscription.days', { count: subscription.days_left })
                               : `${subscription.hours_left}${t('subscription.hours')} ${subscription.minutes_left}${t('subscription.minutes')}`}
                           </span>
-                          <span className="text-[11px] text-dark-50/30">
+                          <span className="text-[11px] text-dark-400">
                             {t('subscription.trialInfo.remaining')}
                           </span>
                         </div>
@@ -650,7 +600,7 @@ export default function Subscription() {
                           >
                             {subscription.traffic_limit_gb || '∞'} {t('common.units.gb')}
                           </span>
-                          <span className="text-[11px] text-dark-50/30">
+                          <span className="text-[11px] text-dark-400">
                             {t('subscription.traffic')}
                           </span>
                         </div>
@@ -661,8 +611,12 @@ export default function Subscription() {
                           >
                             {subscription.device_limit === 0 ? '∞' : subscription.device_limit}
                           </span>
-                          <span className="text-[11px] text-dark-50/30">
-                            {t('subscription.devices')}
+                          {/* Слово по числу: было «1 Устройства». Безлимит — «∞ устройств». */}
+                          <span className="text-[11px] text-dark-400">
+                            {t('subscription.devicesWord', {
+                              count:
+                                subscription.device_limit === 0 ? 5 : subscription.device_limit,
+                            })}
                           </span>
                         </div>
                       </div>
@@ -674,11 +628,11 @@ export default function Subscription() {
               {/* ─── Traffic Progress ─── */}
               <div className="mb-6">
                 <div className="mb-2.5 flex items-center justify-between">
-                  <span className="text-[11px] font-medium uppercase tracking-wider text-dark-50/40">
+                  <span className="text-[11px] font-medium uppercase tracking-wider text-dark-400">
                     {t('subscription.traffic')}
                   </span>
                   <div className="flex items-center gap-2">
-                    <span className="font-mono text-[11px] text-dark-50/30">
+                    <span className="font-mono text-[11px] text-dark-400">
                       {isUnlimited
                         ? formatTraffic(usedGb)
                         : `${formatTraffic(usedGb)} / ${formatTraffic(subscription.traffic_limit_gb)}`}
@@ -686,22 +640,12 @@ export default function Subscription() {
                     <button
                       onClick={() => refreshTrafficMutation.mutate()}
                       disabled={refreshTrafficMutation.isPending || trafficRefreshCooldown > 0}
-                      className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium text-dark-50/30 transition-colors hover:bg-dark-50/[0.05] hover:text-dark-50/50 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium text-dark-400 transition-colors hover:bg-dark-50/[0.05] hover:text-dark-50/50 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      <svg
-                        className={`h-3 w-3 ${refreshTrafficMutation.isPending ? 'animate-spin' : ''}`}
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                        strokeWidth={2}
-                        aria-hidden="true"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"
-                        />
-                      </svg>
+                      <RefreshIcon
+                        className="h-3 w-3"
+                        spinning={refreshTrafficMutation.isPending}
+                      />
                       {trafficRefreshCooldown > 0
                         ? `${trafficRefreshCooldown}s`
                         : t('common.refresh')}
@@ -710,7 +654,7 @@ export default function Subscription() {
                 </div>
                 {subscription.traffic_reset_mode &&
                   subscription.traffic_reset_mode !== 'NO_RESET' && (
-                    <div className="mb-2 text-[10px] text-dark-50/25">
+                    <div className="mb-2 text-[10px] text-dark-400">
                       {t(`subscription.trafficReset.${subscription.traffic_reset_mode}`)}
                     </div>
                   )}
@@ -734,36 +678,22 @@ export default function Subscription() {
                       haptic.notification('error');
                       return;
                     }
-                    navigate('/connection');
+                    navigate(subscriptionId ? `/connection?sub=${subscriptionId}` : '/connection');
                   }}
                   className={`mb-5 flex w-full items-center gap-3.5 rounded-[14px] p-3.5 text-left transition-shadow duration-300${isAtDeviceLimit ? 'cursor-not-allowed opacity-50' : ''}`}
                   style={{ fontFamily: 'inherit' }}
                 >
                   <div
                     className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px] transition-colors duration-500"
-                    style={{ background: `${zone.mainHex}12` }}
+                    style={{ background: `${zone.mainHex}12`, color: zone.mainHex }}
                   >
-                    <svg
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke={zone.mainHex}
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <rect x="2" y="3" width="20" height="14" rx="2" />
-                      <path d="M12 17v4M8 21h8" />
-                      <path d="M12 8v4M10 10h4" opacity="0.7" />
-                    </svg>
+                    <DevicesIcon className="h-4 w-4" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-semibold tracking-tight text-dark-50">
                       {t('dashboard.connectDevice')}
                     </div>
-                    <div className="mt-0.5 text-[11px] text-dark-50/30">
+                    <div className="mt-0.5 text-[11px] text-dark-400">
                       {subscription.device_limit === 0
                         ? t('dashboard.devicesConnectedUnlimited', { used: connectedDevices })
                         : t('dashboard.devicesOfMax', {
@@ -782,13 +712,22 @@ export default function Subscription() {
                   </div>
                   {subscription.device_limit === 0 ? (
                     <div
-                      className="flex flex-shrink-0 items-center text-lg text-dark-50/40"
+                      className="flex flex-shrink-0 items-center text-lg text-dark-400"
                       aria-hidden="true"
                     >
                       ∞
                     </div>
                   ) : subscription.device_limit <= 10 ? (
-                    <div className="flex flex-shrink-0 gap-1.5" aria-hidden="true">
+                    // Больше пяти точек — в два ряда по пять: десять в ряд занимали
+                    // 124 px, и текст кнопки на телефоне шёл в 5–7 строк.
+                    <div
+                      className={
+                        subscription.device_limit > 5
+                          ? 'grid flex-shrink-0 grid-cols-5 gap-1'
+                          : 'flex flex-shrink-0 gap-1.5'
+                      }
+                      aria-hidden="true"
+                    >
                       {Array.from({ length: subscription.device_limit }, (_, i) => (
                         <div
                           key={i}
@@ -806,13 +745,18 @@ export default function Subscription() {
                         className="h-[6px] w-full overflow-hidden rounded-full"
                         style={{ background: g.textGhost }}
                       >
+                        {/* scaleX (compositor) instead of width (layout-thrash).
+                            Track is 64px (w-16), so 0.0625 floor = 4px minimum,
+                            preserving the prior minWidth behaviour. */}
                         <div
-                          className="h-full rounded-full transition-[width] duration-500"
+                          className="h-full w-full origin-left rounded-full transition-transform duration-500"
                           style={{
-                            width: `${Math.round((connectedDevices / subscription.device_limit) * 100)}%`,
+                            transform: `scaleX(${(() => {
+                              const pct = connectedDevices / subscription.device_limit;
+                              return connectedDevices > 0 ? Math.max(pct, 0.0625) : 0;
+                            })()})`,
                             background: zone.mainHex,
                             boxShadow: `0 0 8px ${zone.mainHex}40`,
-                            minWidth: connectedDevices > 0 ? '4px' : '0px',
                           }}
                         />
                       </div>
@@ -822,16 +766,17 @@ export default function Subscription() {
               )}
 
               {/* ─── Subscription URL ─── */}
-              {subscription.subscription_url && !subscription.hide_subscription_link && (
+              {displayedConnectionUrl && !shouldHideConnectionLink && (
                 <div className="mb-5 flex gap-2">
                   <code
-                    className="scrollbar-hide flex-1 overflow-x-auto break-all rounded-[10px] px-3 py-2 font-mono text-[11px] text-dark-50/30"
+                    className="block min-w-0 flex-1 truncate whitespace-nowrap rounded-[10px] px-3 py-2 font-mono text-[11px] text-dark-400"
                     style={{
                       background: g.codeBg,
                       border: `1px solid ${g.codeBorder}`,
                     }}
+                    title={displayedConnectionUrl}
                   >
-                    {subscription.subscription_url}
+                    {displayedConnectionUrl}
                   </code>
                   <button
                     onClick={copyUrl}
@@ -843,6 +788,7 @@ export default function Subscription() {
                         : `1px solid ${g.trackBg}`,
                       color: copied ? 'rgb(var(--color-accent-400))' : g.textMuted,
                     }}
+                    aria-label={t('subscription.copyLink')}
                     title={t('subscription.copyLink')}
                   >
                     {copied ? <CheckIcon /> : <CopyIcon />}
@@ -854,7 +800,7 @@ export default function Subscription() {
               <div className="mb-5">
                 <CountdownTimer
                   endDate={subscription.end_date}
-                  isActive={subscription.is_active}
+                  isActive={subscription.is_active || subscription.is_limited}
                   glassColors={g}
                 />
               </div>
@@ -862,7 +808,7 @@ export default function Subscription() {
               {/* ─── Locations ─── */}
               {subscription.servers && subscription.servers.length > 0 && (
                 <div className="mb-5">
-                  <div className="mb-2 text-[10px] font-medium uppercase tracking-wider text-dark-50/35">
+                  <div className="mb-2 text-[10px] font-medium uppercase tracking-wider text-dark-400">
                     {t('subscription.locationsLabel')}
                   </div>
                   <div className="flex flex-wrap gap-1.5">
@@ -878,7 +824,12 @@ export default function Subscription() {
                         {server.country_code && (
                           <span className="text-xs">{getFlagEmoji(server.country_code)}</span>
                         )}
-                        {server.name}
+                        <Twemoji
+                          tag="span"
+                          options={{ className: 'twemoji', folder: 'svg', ext: '.svg' }}
+                        >
+                          {server.name}
+                        </Twemoji>
                       </span>
                     ))}
                   </div>
@@ -888,7 +839,7 @@ export default function Subscription() {
               {/* ─── Purchased Traffic Packages ─── */}
               {subscription.traffic_purchases && subscription.traffic_purchases.length > 0 && (
                 <div className="mb-5">
-                  <div className="mb-2 text-[10px] font-medium uppercase tracking-wider text-dark-50/35">
+                  <div className="mb-2 text-[10px] font-medium uppercase tracking-wider text-dark-400">
                     {t('subscription.purchasedTraffic')}
                   </div>
                   <div className="space-y-2">
@@ -905,21 +856,9 @@ export default function Subscription() {
                           <div className="flex items-center gap-2">
                             <div
                               className="flex h-7 w-7 items-center justify-center rounded-[8px]"
-                              style={{ background: `${zone.mainHex}12` }}
+                              style={{ background: `${zone.mainHex}12`, color: zone.mainHex }}
                             >
-                              <svg
-                                width="14"
-                                height="14"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke={zone.mainHex}
-                                strokeWidth="2"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                aria-hidden="true"
-                              >
-                                <path d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                              </svg>
+                              <DownloadIcon className="h-3.5 w-3.5" />
                             </div>
                             <span className="text-sm font-semibold text-dark-50">
                               {purchase.traffic_gb} {t('common.units.gb')}
@@ -936,9 +875,9 @@ export default function Subscription() {
                                 ? t('subscription.expired')
                                 : t('subscription.days', { count: purchase.days_remaining })}
                             </div>
-                            <div className="mt-0.5 font-mono text-[9px] text-dark-50/20">
+                            <div className="mt-0.5 font-mono text-[9px] text-dark-400">
                               {t('subscription.trafficResetAt')}:{' '}
-                              {new Date(purchase.expires_at).toLocaleDateString(undefined, {
+                              {new Date(purchase.expires_at).toLocaleDateString(uiLocale(), {
                                 day: '2-digit',
                                 month: '2-digit',
                                 year: 'numeric',
@@ -951,16 +890,19 @@ export default function Subscription() {
                           style={{ background: g.trackBg }}
                         >
                           <div
-                            className="absolute inset-0 rounded-full transition-[width] duration-500"
+                            className="absolute inset-0 origin-left rounded-full bg-accent-500 transition-transform duration-500"
                             style={{
-                              width: `${purchase.progress_percent}%`,
-                              background: `linear-gradient(90deg, ${zone.mainHex}, ${zone.mainHex}80)`,
+                              transform: `scaleX(${purchase.progress_percent / 100})`,
                             }}
                           />
                         </div>
-                        <div className="mt-1 flex justify-between font-mono text-[9px] text-dark-50/20">
-                          <span>{new Date(purchase.created_at).toLocaleDateString()}</span>
-                          <span>{new Date(purchase.expires_at).toLocaleDateString()}</span>
+                        <div className="mt-1 flex justify-between font-mono text-[9px] text-dark-400">
+                          <span>
+                            {new Date(purchase.created_at).toLocaleDateString(uiLocale())}
+                          </span>
+                          <span>
+                            {new Date(purchase.expires_at).toLocaleDateString(uiLocale())}
+                          </span>
                         </div>
                       </div>
                     ))}
@@ -969,42 +911,15 @@ export default function Subscription() {
               )}
 
               {/* ─── Autopay Toggle ─── */}
-              {!subscription.is_trial && !subscription.is_daily && (
-                <div
-                  className="flex items-center justify-between rounded-[14px] p-3.5"
-                  style={{
-                    background: g.innerBg,
-                    border: `1px solid ${g.innerBorder}`,
-                  }}
-                >
-                  <div>
-                    <div className="text-sm font-semibold text-dark-50">
-                      {t('subscription.autoRenewal')}
-                    </div>
-                    <div className="mt-0.5 text-[11px] text-dark-50/30">
-                      {t('subscription.daysBeforeExpiry', {
-                        count: subscription.autopay_days_before,
-                      })}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => autopayMutation.mutate(!subscription.autopay_enabled)}
-                    disabled={autopayMutation.isPending}
-                    className="relative h-7 w-[52px] rounded-full transition-colors duration-300"
-                    style={{
-                      background: subscription.autopay_enabled ? zone.mainHex : g.textGhost,
-                    }}
-                  >
-                    <span
-                      className="absolute top-[3px] h-[22px] w-[22px] rounded-full bg-white transition-[left] duration-300"
-                      style={{
-                        left: subscription.autopay_enabled ? '26px' : '3px',
-                        boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
-                      }}
-                    />
-                  </button>
-                </div>
-              )}
+              <AutopayToggle
+                subscription={subscription}
+                subscriptionId={subscriptionId}
+                accentColor={zone.mainHex}
+                offColor={g.textGhost}
+                surface={{ background: g.innerBg, border: g.innerBorder }}
+              />
+
+              <RecurringPanels subscription={subscription} subscriptionId={subscriptionId} />
             </div>
           );
         })()
@@ -1019,25 +934,11 @@ export default function Subscription() {
         >
           <div
             className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl"
-            style={{ background: g.hoverBg }}
+            style={{ background: g.hoverBg, color: g.textFaint }}
           >
-            <svg
-              width="32"
-              height="32"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke={g.textFaint}
-              strokeWidth="1.5"
-              aria-hidden="true"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"
-              />
-            </svg>
+            <TrashIcon className="h-8 w-8" />
           </div>
-          <div className="text-sm text-dark-50/30">{t('subscription.noSubscription')}</div>
+          <div className="text-sm text-dark-400">{t('subscription.noSubscription')}</div>
         </div>
       )}
 
@@ -1052,1020 +953,126 @@ export default function Subscription() {
             padding: '24px 28px',
           }}
         >
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-bold tracking-tight text-dark-50">
-                {t('subscription.pause.title')}
-              </h2>
-              <div className="mt-1 text-[12px] text-dark-50/35">
-                {subscription.is_limited
-                  ? t('subscription.trafficLimited')
-                  : subscription.status === 'disabled'
-                    ? t('subscription.pause.suspended')
-                    : subscription.is_daily_paused
-                      ? t('subscription.pause.paused')
-                      : t('subscription.pause.active')}
-              </div>
-            </div>
-            <button
-              onClick={() => pauseMutation.mutate()}
-              disabled={pauseMutation.isPending}
-              className="rounded-[10px] px-4 py-2 text-sm font-semibold transition-colors duration-300"
-              style={{
-                background:
-                  subscription.is_daily_paused || subscription.status === 'disabled'
-                    ? 'rgba(var(--color-accent-400), 0.12)'
-                    : 'rgba(255,184,0,0.12)',
-                border:
-                  subscription.is_daily_paused || subscription.status === 'disabled'
-                    ? '1px solid rgba(var(--color-accent-400), 0.2)'
-                    : '1px solid rgba(255,184,0,0.2)',
-                color:
-                  subscription.is_daily_paused || subscription.status === 'disabled'
-                    ? 'rgb(var(--color-accent-400))'
-                    : '#FFB800',
-              }}
-            >
-              {pauseMutation.isPending ? (
-                <span className="flex items-center gap-2">
-                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                </span>
-              ) : subscription.is_daily_paused || subscription.status === 'disabled' ? (
-                t('subscription.pause.resumeBtn')
-              ) : (
-                t('subscription.pause.pauseBtn')
-              )}
-            </button>
-          </div>
-
-          {/* Pause mutation error */}
-          {pauseMutation.isError &&
-            (() => {
-              const balanceError = getInsufficientBalanceError(pauseMutation.error);
-              if (balanceError) {
-                const missingAmount = balanceError.required - balanceError.balance;
-                return (
-                  <div className="mt-4">
-                    <InsufficientBalancePrompt
-                      missingAmountKopeks={missingAmount}
-                      message={t('subscription.pause.insufficientBalance')}
-                      compact
-                    />
-                  </div>
-                );
-              }
-              return (
-                <div
-                  className="mt-4 rounded-[10px] p-3 text-center text-sm"
-                  style={{
-                    background: 'rgba(255,59,92,0.08)',
-                    border: '1px solid rgba(255,59,92,0.15)',
-                    color: '#FF3B5C',
-                  }}
-                >
-                  {getErrorMessage(pauseMutation.error)}
-                </div>
-              );
-            })()}
-
-          {/* Paused info or Next charge progress bar */}
-          {subscription.is_daily_paused ? (
-            <div
-              className="mt-4 rounded-[12px] p-4"
-              style={{
-                background: 'rgba(255,184,0,0.06)',
-                border: '1px solid rgba(255,184,0,0.12)',
-              }}
-            >
-              <div className="flex items-start gap-3">
-                <div className="text-lg" style={{ color: '#FFB800' }}>
-                  ⏸️
-                </div>
-                <div>
-                  <div className="text-sm font-semibold" style={{ color: '#FFB800' }}>
-                    {t('subscription.pause.pausedInfo')}
-                  </div>
-                  <div className="mt-1 text-[12px] text-dark-50/35">
-                    {t('subscription.pause.pausedDescription')}{' '}
-                    {new Date(subscription.end_date).toLocaleDateString()} (
-                    {t('subscription.pause.days', { count: subscription.days_left })})
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : (
-            subscription.next_daily_charge_at &&
-            (() => {
-              const now = new Date();
-              const nextChargeStr = subscription.next_daily_charge_at.endsWith('Z')
-                ? subscription.next_daily_charge_at
-                : subscription.next_daily_charge_at + 'Z';
-              const nextCharge = new Date(nextChargeStr);
-              const totalMs = 24 * 60 * 60 * 1000;
-              const remainingMs = Math.max(0, nextCharge.getTime() - now.getTime());
-              const elapsedMs = totalMs - remainingMs;
-              const progress = Math.min(100, (elapsedMs / totalMs) * 100);
-
-              const hours = Math.floor(remainingMs / (1000 * 60 * 60));
-              const minutes = Math.floor((remainingMs % (1000 * 60 * 60)) / (1000 * 60));
-
-              return (
-                <div className="mt-4">
-                  <div className="mb-2 flex items-center justify-between">
-                    <span className="text-[11px] font-medium uppercase tracking-wider text-dark-50/35">
-                      {t('subscription.pause.nextCharge')}
-                    </span>
-                    <span className="font-mono text-[12px] font-semibold text-dark-50">
-                      {hours > 0
-                        ? `${hours}${t('subscription.pause.hours')} ${minutes}${t('subscription.pause.minutes')}`
-                        : `${minutes}${t('subscription.pause.minutes')}`}
-                    </span>
-                  </div>
-                  <div
-                    className="relative h-2 overflow-hidden rounded-full"
-                    style={{ background: g.trackBg }}
-                  >
-                    <div
-                      className="absolute inset-0 rounded-full transition-[width] duration-500"
-                      style={{
-                        width: `${progress}%`,
-                        background:
-                          'linear-gradient(90deg, rgb(var(--color-accent-500)), rgb(var(--color-accent-400)))',
-                      }}
-                    />
-                  </div>
-                  {subscription.daily_price_kopeks && (
-                    <div className="mt-2 text-center text-[11px] text-dark-50/25">
-                      {t('subscription.pause.willBeCharged')}:{' '}
-                      {formatPrice(subscription.daily_price_kopeks)}
-                    </div>
-                  )}
-                </div>
-              );
-            })()
-          )}
+          <DailyPausePanel subscription={subscription} subscriptionId={subscriptionId} />
         </div>
       )}
 
       {/* Purchase / Renewal CTA */}
-      <PurchaseCTAButton subscription={subscription} />
+      <PurchaseCTAButton subscription={subscription} isMultiTariff={isMultiTariff} />
 
-      {/* Additional Options (Buy Devices) */}
-      {subscription &&
-        (subscription.is_active || subscription.is_limited) &&
+      {/* Delete expired subscription */}
+      {isMultiTariff &&
+        subscription &&
+        !subscription.is_active &&
         !subscription.is_trial &&
-        subscription.device_limit !== 0 && (
-          <div
-            className="relative overflow-hidden rounded-3xl"
-            style={{
-              background: g.cardBg,
-              border: `1px solid ${g.cardBorder}`,
-              boxShadow: g.shadow,
-              padding: '24px 28px',
-            }}
-          >
-            <h2 className="mb-4 text-base font-bold tracking-tight text-dark-50">
-              {t('subscription.additionalOptions.title')}
-            </h2>
-
-            {/* Buy Devices */}
-            {!showDeviceTopup ? (
-              <button
-                onClick={() => setShowDeviceTopup(true)}
-                className={`w-full rounded-xl border p-4 text-left transition-colors ${isDark ? 'border-dark-700/50 bg-dark-800/50 hover:border-dark-600' : 'border-champagne-300/60 bg-champagne-200/40 hover:border-champagne-400'}`}
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-medium text-dark-100">
-                      {t('subscription.additionalOptions.buyDevices')}
-                    </div>
-                    <div className="mt-1 text-sm text-dark-400">
-                      {t('subscription.additionalOptions.currentDeviceLimit', {
-                        count: subscription.device_limit,
-                      })}
-                    </div>
-                  </div>
-                  <svg
-                    className="h-5 w-5 text-dark-400"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                  </svg>
-                </div>
-              </button>
-            ) : (
-              <div
-                className={`rounded-xl border p-5 ${isDark ? 'border-dark-700/50 bg-dark-800/50' : 'border-champagne-300/60 bg-champagne-200/40'}`}
-              >
-                <div className="mb-4 flex items-center justify-between">
-                  <h3 className="font-medium text-dark-100">{t('subscription.buyDevices')}</h3>
-                  <button
-                    onClick={() => setShowDeviceTopup(false)}
-                    className="text-sm text-dark-400 hover:text-dark-200"
-                  >
-                    ✕
-                  </button>
-                </div>
-
-                {/* Check if completely unavailable (no subscription, price not set, etc.) */}
-                {devicePriceData?.available === false ? (
-                  <div className="py-4 text-center text-sm text-dark-400">
-                    {devicePriceData.reason ||
-                      t('subscription.additionalOptions.devicesUnavailable')}
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {/* Device selector - show even at max limit */}
-                    <div className="flex items-center justify-center gap-6">
-                      <button
-                        onClick={() => setDevicesToAdd(Math.max(1, devicesToAdd - 1))}
-                        disabled={devicesToAdd <= 1}
-                        className="btn-secondary flex h-12 w-12 items-center justify-center !p-0 text-2xl"
-                      >
-                        -
-                      </button>
-                      <div className="text-center">
-                        <div className="text-4xl font-bold text-dark-100">{devicesToAdd}</div>
-                        <div className="text-sm text-dark-500">
-                          {t('subscription.additionalOptions.devicesUnit')}
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => setDevicesToAdd(devicesToAdd + 1)}
-                        disabled={
-                          devicePriceData?.max_device_limit
-                            ? (devicePriceData.current_device_limit || 0) + devicesToAdd >=
-                              devicePriceData.max_device_limit
-                            : false
-                        }
-                        className="btn-secondary flex h-12 w-12 items-center justify-center !p-0 text-2xl"
-                      >
-                        +
-                      </button>
-                    </div>
-
-                    {/* Show limit info when at or near max */}
-                    {devicePriceData?.max_device_limit && (
-                      <div className="text-center text-sm text-dark-400">
-                        {t('subscription.additionalOptions.currentDeviceLimit', {
-                          count: devicePriceData.current_device_limit || subscription.device_limit,
-                        })}{' '}
-                        /{' '}
-                        {t('subscription.additionalOptions.maxDevices', {
-                          count: devicePriceData.max_device_limit,
-                        })}
-                      </div>
-                    )}
-
-                    {/* Price info - only when available */}
-                    {devicePriceData?.available && devicePriceData.price_per_device_label && (
-                      <div className="text-center">
-                        <div className="mb-2 text-sm text-dark-400">
-                          {/* Show original price with strikethrough if discount */}
-                          {devicePriceData.discount_percent &&
-                          devicePriceData.discount_percent > 0 ? (
-                            <span>
-                              <span className="text-dark-500 line-through">
-                                {formatPrice(devicePriceData.original_price_per_device_kopeks || 0)}
-                              </span>
-                              <span className="mx-1">{devicePriceData.price_per_device_label}</span>
-                            </span>
-                          ) : (
-                            devicePriceData.price_per_device_label
-                          )}
-                          /{t('subscription.perDevice').replace('/ ', '')} (
-                          {t('subscription.days', { count: devicePriceData.days_left })})
-                        </div>
-                        {/* Discount badge */}
-                        {devicePriceData.discount_percent &&
-                          devicePriceData.discount_percent > 0 && (
-                            <div className="mb-2">
-                              <span className="inline-block rounded-full bg-success-500/20 px-2.5 py-0.5 text-sm font-medium text-success-400">
-                                -{devicePriceData.discount_percent}%
-                              </span>
-                            </div>
-                          )}
-                        {/* Total price - show as free if 100% discount or 0 */}
-                        {devicePriceData.total_price_kopeks === 0 ? (
-                          <div className="text-2xl font-bold text-success-400">
-                            {t('subscription.switchTariff.free')}
-                          </div>
-                        ) : (
-                          <div className="text-2xl font-bold text-accent-400">
-                            {/* Show original total with strikethrough if discount */}
-                            {devicePriceData.discount_percent &&
-                              devicePriceData.discount_percent > 0 &&
-                              devicePriceData.base_total_price_kopeks && (
-                                <span className="mr-2 text-lg text-dark-500 line-through">
-                                  {formatPrice(devicePriceData.base_total_price_kopeks)}
-                                </span>
-                              )}
-                            {devicePriceData.total_price_label}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {devicePriceData?.available &&
-                      purchaseOptions &&
-                      devicePriceData.total_price_kopeks &&
-                      devicePriceData.total_price_kopeks > purchaseOptions.balance_kopeks && (
-                        <InsufficientBalancePrompt
-                          missingAmountKopeks={
-                            devicePriceData.total_price_kopeks - purchaseOptions.balance_kopeks
-                          }
-                          compact
-                          onBeforeTopUp={async () => {
-                            await subscriptionApi.saveDevicesCart(devicesToAdd);
-                          }}
-                        />
-                      )}
-
-                    <button
-                      onClick={() => devicePurchaseMutation.mutate()}
-                      disabled={
-                        devicePurchaseMutation.isPending ||
-                        !devicePriceData?.available ||
-                        !!(
-                          devicePriceData?.total_price_kopeks &&
-                          purchaseOptions &&
-                          devicePriceData.total_price_kopeks > purchaseOptions.balance_kopeks
-                        )
-                      }
-                      className="btn-primary w-full py-3"
-                    >
-                      {devicePurchaseMutation.isPending ? (
-                        <span className="flex items-center justify-center gap-2">
-                          <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                        </span>
-                      ) : (
-                        t('subscription.additionalOptions.buy')
-                      )}
-                    </button>
-
-                    {devicePurchaseMutation.isError && (
-                      <div className="text-center text-sm text-error-400">
-                        {getErrorMessage(devicePurchaseMutation.error)}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Reduce Devices */}
-            <div className="mt-4">
-              {!showDeviceReduction ? (
-                <button
-                  onClick={() => setShowDeviceReduction(true)}
-                  className={`w-full rounded-xl border p-4 text-left transition-colors ${isDark ? 'border-dark-700/50 bg-dark-800/50 hover:border-dark-600' : 'border-champagne-300/60 bg-champagne-200/40 hover:border-champagne-400'}`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="font-medium text-dark-100">
-                        {t('subscription.additionalOptions.reduceDevices')}
-                      </div>
-                      <div className="mt-1 text-sm text-dark-400">
-                        {t('subscription.additionalOptions.reduceDevicesDescription')}
-                      </div>
-                    </div>
-                    <svg
-                      className="h-5 w-5 text-dark-400"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={2}
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                    </svg>
-                  </div>
-                </button>
-              ) : (
-                <div
-                  className={`rounded-xl border p-5 ${isDark ? 'border-dark-700/50 bg-dark-800/50' : 'border-champagne-300/60 bg-champagne-200/40'}`}
-                >
-                  <div className="mb-4 flex items-center justify-between">
-                    <h3 className="font-medium text-dark-100">
-                      {t('subscription.additionalOptions.reduceDevicesTitle')}
-                    </h3>
-                    <button
-                      onClick={() => setShowDeviceReduction(false)}
-                      className="text-sm text-dark-400 hover:text-dark-200"
-                    >
-                      ✕
-                    </button>
-                  </div>
-
-                  {deviceReductionInfo?.available === false ? (
-                    <div className="py-4 text-center text-sm text-dark-400">
-                      {deviceReductionInfo.reason ||
-                        t('subscription.additionalOptions.reduceUnavailable')}
-                    </div>
-                  ) : deviceReductionInfo ? (
-                    <div className="space-y-4">
-                      {/* Device limit selector */}
-                      <div className="flex items-center justify-center gap-6">
-                        <button
-                          onClick={() =>
-                            setTargetDeviceLimit(
-                              Math.max(
-                                Math.max(
-                                  deviceReductionInfo.min_device_limit,
-                                  deviceReductionInfo.connected_devices_count,
-                                ),
-                                targetDeviceLimit - 1,
-                              ),
-                            )
-                          }
-                          disabled={
-                            targetDeviceLimit <=
-                            Math.max(
-                              deviceReductionInfo.min_device_limit,
-                              deviceReductionInfo.connected_devices_count,
-                            )
-                          }
-                          className="btn-secondary flex h-12 w-12 items-center justify-center !p-0 text-2xl"
-                        >
-                          -
-                        </button>
-                        <div className="text-center">
-                          <div className="text-4xl font-bold text-dark-100">
-                            {targetDeviceLimit}
-                          </div>
-                          <div className="text-sm text-dark-500">
-                            {t('subscription.additionalOptions.devicesUnit')}
-                          </div>
-                        </div>
-                        <button
-                          onClick={() =>
-                            setTargetDeviceLimit(
-                              Math.min(
-                                deviceReductionInfo.current_device_limit - 1,
-                                targetDeviceLimit + 1,
-                              ),
-                            )
-                          }
-                          disabled={
-                            targetDeviceLimit >= deviceReductionInfo.current_device_limit - 1
-                          }
-                          className="btn-secondary flex h-12 w-12 items-center justify-center !p-0 text-2xl"
-                        >
-                          +
-                        </button>
-                      </div>
-
-                      {/* Info */}
-                      <div className="space-y-1 text-center text-sm text-dark-400">
-                        <div>
-                          {t('subscription.additionalOptions.currentDeviceLimit', {
-                            count: deviceReductionInfo.current_device_limit,
-                          })}
-                        </div>
-                        <div>
-                          {t('subscription.additionalOptions.minDeviceLimit', {
-                            count: deviceReductionInfo.min_device_limit,
-                          })}
-                        </div>
-                        <div>
-                          {t('subscription.additionalOptions.connectedDevices', {
-                            count: deviceReductionInfo.connected_devices_count,
-                          })}
-                        </div>
-                      </div>
-
-                      {/* Warning if connected devices block reduction */}
-                      {deviceReductionInfo.connected_devices_count >
-                        deviceReductionInfo.min_device_limit && (
-                        <div className="rounded-lg bg-warning-500/10 p-3 text-center text-sm text-warning-400">
-                          {t('subscription.additionalOptions.disconnectDevicesFirst', {
-                            count: deviceReductionInfo.connected_devices_count,
-                          })}
-                        </div>
-                      )}
-
-                      {/* New limit preview */}
-                      <div className="text-center">
-                        <div className="text-sm text-dark-400">
-                          {t('subscription.additionalOptions.newDeviceLimit', {
-                            count: targetDeviceLimit,
-                          })}
-                        </div>
-                      </div>
-
-                      <button
-                        onClick={() => deviceReductionMutation.mutate()}
-                        disabled={
-                          deviceReductionMutation.isPending ||
-                          targetDeviceLimit >= deviceReductionInfo.current_device_limit ||
-                          targetDeviceLimit < deviceReductionInfo.min_device_limit ||
-                          targetDeviceLimit < deviceReductionInfo.connected_devices_count
-                        }
-                        className="btn-primary w-full py-3"
-                      >
-                        {deviceReductionMutation.isPending ? (
-                          <span className="flex items-center justify-center gap-2">
-                            <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                            {t('subscription.additionalOptions.reducing')}
-                          </span>
-                        ) : (
-                          t('subscription.additionalOptions.reduce')
-                        )}
-                      </button>
-
-                      {deviceReductionMutation.isError && (
-                        <div className="text-center text-sm text-error-400">
-                          {getErrorMessage(deviceReductionMutation.error)}
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-center py-4">
-                      <span className="h-5 w-5 animate-spin rounded-full border-2 border-accent-400/30 border-t-accent-400" />
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Buy Traffic */}
-            {subscription.traffic_limit_gb > 0 && (
-              <div className="mt-4">
-                {!showTrafficTopup ? (
-                  <button
-                    onClick={() => setShowTrafficTopup(true)}
-                    className={`w-full rounded-xl border p-4 text-left transition-colors ${isDark ? 'border-dark-700/50 bg-dark-800/50 hover:border-dark-600' : 'border-champagne-300/60 bg-champagne-200/40 hover:border-champagne-400'}`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-medium text-dark-100">
-                          {t('subscription.additionalOptions.buyTraffic')}
-                        </div>
-                        <div className="mt-1 text-sm text-dark-400">
-                          {t('subscription.additionalOptions.currentTrafficLimit', {
-                            limit: subscription.traffic_limit_gb,
-                            used: subscription.traffic_used_gb.toFixed(1),
-                          })}
-                        </div>
-                      </div>
-                      <svg
-                        className="h-5 w-5 text-dark-400"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                        strokeWidth={2}
-                      >
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                      </svg>
-                    </div>
-                  </button>
-                ) : (
-                  <div
-                    className={`rounded-xl border p-5 ${isDark ? 'border-dark-700/50 bg-dark-800/50' : 'border-champagne-300/60 bg-champagne-200/40'}`}
-                  >
-                    <div className="mb-4 flex items-center justify-between">
-                      <h3 className="font-medium text-dark-100">
-                        {t('subscription.additionalOptions.buyTrafficTitle')}
-                      </h3>
-                      <button
-                        onClick={() => {
-                          setShowTrafficTopup(false);
-                          setSelectedTrafficPackage(null);
-                        }}
-                        className="text-sm text-dark-400 hover:text-dark-200"
-                      >
-                        ✕
-                      </button>
-                    </div>
-
-                    <div
-                      className={`mb-4 rounded-lg p-2 text-xs ${isDark ? 'bg-dark-700/30 text-dark-500' : 'bg-champagne-300/40 text-champagne-600'}`}
-                    >
-                      ⚠️ {t('subscription.additionalOptions.trafficWarning')}
-                    </div>
-
-                    {!trafficPackages || trafficPackages.length === 0 ? (
-                      <div className="py-4 text-center text-sm text-dark-400">
-                        {t('subscription.additionalOptions.trafficUnavailable')}
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        <div className="grid grid-cols-2 gap-3">
-                          {trafficPackages.map((pkg) => (
-                            <button
-                              key={pkg.gb}
-                              onClick={() => setSelectedTrafficPackage(pkg.gb)}
-                              className={`rounded-xl border p-4 text-center transition-all ${
-                                selectedTrafficPackage === pkg.gb
-                                  ? 'border-accent-500 bg-accent-500/10'
-                                  : isDark
-                                    ? 'border-dark-700/50 bg-dark-800/50 hover:border-dark-600'
-                                    : 'border-champagne-300/60 bg-champagne-200/40 hover:border-champagne-400'
-                              }`}
-                            >
-                              <div className="text-lg font-semibold text-dark-100">
-                                {pkg.is_unlimited
-                                  ? '♾️ ' + t('subscription.additionalOptions.unlimited')
-                                  : `${pkg.gb} ${t('common.units.gb')}`}
-                              </div>
-                              {/* Discount badge */}
-                              {pkg.discount_percent && pkg.discount_percent > 0 && (
-                                <div className="mb-1">
-                                  <span className="inline-block rounded-full bg-success-500/20 px-2 py-0.5 text-xs font-medium text-success-400">
-                                    -{pkg.discount_percent}%
-                                  </span>
-                                </div>
-                              )}
-                              {/* Price with original strikethrough if discount */}
-                              <div className="font-medium text-accent-400">
-                                {pkg.discount_percent &&
-                                pkg.discount_percent > 0 &&
-                                pkg.base_price_kopeks ? (
-                                  <>
-                                    <span className="mr-1 text-sm text-dark-500 line-through">
-                                      {formatPrice(pkg.base_price_kopeks)}
-                                    </span>
-                                    {formatPrice(pkg.price_kopeks)}
-                                  </>
-                                ) : (
-                                  formatPrice(pkg.price_kopeks)
-                                )}
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-
-                        {selectedTrafficPackage !== null &&
-                          (() => {
-                            const selectedPkg = trafficPackages.find(
-                              (p) => p.gb === selectedTrafficPackage,
-                            );
-                            const hasEnoughBalance =
-                              !selectedPkg ||
-                              !purchaseOptions ||
-                              selectedPkg.price_kopeks <= purchaseOptions.balance_kopeks;
-                            const missingAmount =
-                              selectedPkg && purchaseOptions
-                                ? selectedPkg.price_kopeks - purchaseOptions.balance_kopeks
-                                : 0;
-
-                            return (
-                              <>
-                                {!hasEnoughBalance && missingAmount > 0 && (
-                                  <InsufficientBalancePrompt
-                                    missingAmountKopeks={missingAmount}
-                                    compact
-                                    className="mb-3"
-                                    onBeforeTopUp={async () => {
-                                      await subscriptionApi.saveTrafficCart(selectedTrafficPackage);
-                                    }}
-                                  />
-                                )}
-                                <button
-                                  onClick={() =>
-                                    trafficPurchaseMutation.mutate(selectedTrafficPackage)
-                                  }
-                                  disabled={trafficPurchaseMutation.isPending || !hasEnoughBalance}
-                                  className="btn-primary w-full py-3"
-                                >
-                                  {trafficPurchaseMutation.isPending ? (
-                                    <span className="flex items-center justify-center gap-2">
-                                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                                    </span>
-                                  ) : selectedPkg?.is_unlimited ? (
-                                    t('subscription.additionalOptions.buyUnlimited')
-                                  ) : (
-                                    t('subscription.additionalOptions.buyTrafficGb', {
-                                      gb: selectedTrafficPackage,
-                                    })
-                                  )}
-                                </button>
-                              </>
-                            );
-                          })()}
-
-                        {trafficPurchaseMutation.isError && (
-                          <div className="text-center text-sm text-error-400">
-                            {getErrorMessage(trafficPurchaseMutation.error)}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Server Management */}
-            <div className="mt-4">
-              {!showServerManagement ? (
-                <button
-                  onClick={() => setShowServerManagement(true)}
-                  className={`w-full rounded-xl border p-4 text-left transition-colors ${isDark ? 'border-dark-700/50 bg-dark-800/50 hover:border-dark-600' : 'border-champagne-300/60 bg-champagne-200/40 hover:border-champagne-400'}`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="font-medium text-dark-100">
-                        {t('subscription.additionalOptions.manageServers')}
-                      </div>
-                      <div className="mt-1 text-sm text-dark-400">
-                        {t('subscription.servers', { count: subscription.servers?.length || 0 })}
-                      </div>
-                    </div>
-                    <svg
-                      className="h-5 w-5 text-dark-400"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      strokeWidth={2}
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                    </svg>
-                  </div>
-                </button>
-              ) : (
-                <div
-                  className={`rounded-xl border p-5 ${isDark ? 'border-dark-700/50 bg-dark-800/50' : 'border-champagne-300/60 bg-champagne-200/40'}`}
-                >
-                  <div className="mb-4 flex items-center justify-between">
-                    <h3 className="font-medium text-dark-100">
-                      {t('subscription.additionalOptions.manageServersTitle')}
-                    </h3>
-                    <button
-                      onClick={() => {
-                        setShowServerManagement(false);
-                        setSelectedServersToUpdate([]);
-                      }}
-                      className="text-sm text-dark-400 hover:text-dark-200"
-                    >
-                      ✕
-                    </button>
-                  </div>
-
-                  {countriesLoading ? (
-                    <div className="flex items-center justify-center py-8">
-                      <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent-500 border-t-transparent" />
-                    </div>
-                  ) : countriesData && countriesData.countries.length > 0 ? (
-                    <div className="space-y-4">
-                      <div
-                        className={`rounded-lg p-2 text-xs ${isDark ? 'bg-dark-700/30 text-dark-500' : 'bg-champagne-300/40 text-champagne-600'}`}
-                      >
-                        {t('subscription.serverManagement.statusLegend')}
-                      </div>
-
-                      {countriesData.discount_percent > 0 && (
-                        <div className="rounded-lg border border-success-500/30 bg-success-500/10 p-2 text-xs text-success-400">
-                          🎁{' '}
-                          {t('subscription.serverManagement.discountBanner', {
-                            percent: countriesData.discount_percent,
-                          })}
-                        </div>
-                      )}
-
-                      <div className="max-h-64 space-y-2 overflow-y-auto">
-                        {countriesData.countries
-                          .filter((country) => country.is_available || country.is_connected)
-                          .map((country) => {
-                            const isCurrentlyConnected = country.is_connected;
-                            const isIncludedInTariff = country.is_included_in_tariff;
-                            const isSelected = selectedServersToUpdate.includes(country.uuid);
-                            const willBeAdded = !isCurrentlyConnected && isSelected;
-                            const willBeRemoved =
-                              isCurrentlyConnected && !isSelected && !isIncludedInTariff;
-
-                            return (
-                              <button
-                                key={country.uuid}
-                                onClick={() => {
-                                  if (isIncludedInTariff) return;
-                                  if (isSelected) {
-                                    setSelectedServersToUpdate((prev) =>
-                                      prev.filter((u) => u !== country.uuid),
-                                    );
-                                  } else {
-                                    setSelectedServersToUpdate((prev) => [...prev, country.uuid]);
-                                  }
-                                }}
-                                disabled={
-                                  isIncludedInTariff ||
-                                  (!country.is_available && !isCurrentlyConnected)
-                                }
-                                className={`flex w-full items-center justify-between rounded-xl border p-3 text-left transition-all ${
-                                  isSelected
-                                    ? isIncludedInTariff
-                                      ? 'border-accent-500/60 bg-accent-500/10'
-                                      : willBeAdded
-                                        ? 'border-success-500 bg-success-500/10'
-                                        : 'border-accent-500 bg-accent-500/10'
-                                    : willBeRemoved
-                                      ? 'border-error-500/50 bg-error-500/5'
-                                      : isDark
-                                        ? 'border-dark-700/50 bg-dark-800/50 hover:border-dark-600'
-                                        : 'border-champagne-300/60 bg-champagne-200/40 hover:border-champagne-400'
-                                } ${isIncludedInTariff || (!country.is_available && !isCurrentlyConnected) ? 'cursor-not-allowed opacity-50' : ''}`}
-                              >
-                                <div className="flex items-center gap-3">
-                                  <span className="text-lg">
-                                    {isIncludedInTariff
-                                      ? '🔒'
-                                      : willBeAdded
-                                        ? '➕'
-                                        : willBeRemoved
-                                          ? '➖'
-                                          : isSelected
-                                            ? '✅'
-                                            : '⚪'}
-                                  </span>
-                                  <div>
-                                    <div className="flex items-center gap-2 font-medium text-dark-100">
-                                      {country.name}
-                                      {isIncludedInTariff && (
-                                        <span className="rounded bg-accent-500/20 px-1.5 py-0.5 text-xs text-accent-300">
-                                          {t(
-                                            'subscription.serverManagement.includedInTariff',
-                                            'Included in tariff',
-                                          )}
-                                        </span>
-                                      )}
-                                      {country.has_discount && !isCurrentlyConnected && (
-                                        <span className="rounded bg-success-500/20 px-1.5 py-0.5 text-xs text-success-400">
-                                          -{country.discount_percent}%
-                                        </span>
-                                      )}
-                                    </div>
-                                    {willBeAdded && (
-                                      <div className="text-xs text-success-400">
-                                        +{formatPrice(country.price_kopeks)}{' '}
-                                        {t('subscription.serverManagement.forDays', {
-                                          days: countriesData.days_left,
-                                        })}
-                                        {country.has_discount && (
-                                          <span className="ml-1 text-dark-500 line-through">
-                                            {formatPrice(
-                                              Math.round(
-                                                (country.base_price_kopeks *
-                                                  countriesData.days_left) /
-                                                  30,
-                                              ),
-                                            )}
-                                          </span>
-                                        )}
-                                      </div>
-                                    )}
-                                    {!isIncludedInTariff &&
-                                      !willBeAdded &&
-                                      !isCurrentlyConnected && (
-                                        <div className="text-xs text-dark-500">
-                                          {formatPrice(country.price_per_month_kopeks)}
-                                          {t('subscription.serverManagement.perMonth')}
-                                          {country.has_discount && (
-                                            <span className="ml-1 text-dark-600 line-through">
-                                              {formatPrice(country.base_price_kopeks)}
-                                            </span>
-                                          )}
-                                        </div>
-                                      )}
-                                    {!isIncludedInTariff &&
-                                      !country.is_available &&
-                                      !isCurrentlyConnected && (
-                                        <div className="text-xs text-dark-500">
-                                          {t('subscription.serverManagement.unavailable')}
-                                        </div>
-                                      )}
-                                    {isIncludedInTariff && (
-                                      <div className="text-xs text-dark-500">
-                                        {t(
-                                          'subscription.serverManagement.includedInTariffHint',
-                                          'Base server from your current tariff',
-                                        )}
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                                {country.country_code && (
-                                  <span className="text-xl">
-                                    {getFlagEmoji(country.country_code)}
-                                  </span>
-                                )}
-                              </button>
-                            );
-                          })}
-                      </div>
-
-                      {(() => {
-                        const currentConnected = countriesData.countries
-                          .filter((c) => c.is_connected)
-                          .map((c) => c.uuid);
-                        const added = selectedServersToUpdate.filter(
-                          (u) => !currentConnected.includes(u),
-                        );
-                        const removed = currentConnected.filter(
-                          (u) => !selectedServersToUpdate.includes(u),
-                        );
-                        const hasChanges = added.length > 0 || removed.length > 0;
-
-                        // Calculate cost for added servers
-                        const addedServers = countriesData.countries.filter((c) =>
-                          added.includes(c.uuid),
-                        );
-                        const totalCost = addedServers.reduce((sum, s) => sum + s.price_kopeks, 0);
-                        const hasEnoughBalance =
-                          !purchaseOptions || totalCost <= purchaseOptions.balance_kopeks;
-                        const missingAmount = purchaseOptions
-                          ? totalCost - purchaseOptions.balance_kopeks
-                          : 0;
-
-                        return hasChanges ? (
-                          <div
-                            className={`space-y-3 border-t pt-3 ${isDark ? 'border-dark-700/50' : 'border-champagne-300/60'}`}
-                          >
-                            {added.length > 0 && (
-                              <div className="text-sm">
-                                <span className="text-success-400">
-                                  {t('subscription.serverManagement.toAdd')}
-                                </span>{' '}
-                                <span className="text-dark-300">
-                                  {addedServers.map((s) => s.name).join(', ')}
-                                </span>
-                              </div>
-                            )}
-                            {removed.length > 0 && (
-                              <div className="text-sm">
-                                <span className="text-error-400">
-                                  {t('subscription.serverManagement.toDisconnect')}
-                                </span>{' '}
-                                <span className="text-dark-300">
-                                  {countriesData.countries
-                                    .filter((c) => removed.includes(c.uuid))
-                                    .map((s) => s.name)
-                                    .join(', ')}
-                                </span>
-                              </div>
-                            )}
-                            {totalCost > 0 && (
-                              <div className="text-center">
-                                <div className="text-sm text-dark-400">
-                                  {t('subscription.serverManagement.paymentProrated')}
-                                </div>
-                                <div className="text-xl font-bold text-accent-400">
-                                  {formatPrice(totalCost)}
-                                </div>
-                              </div>
-                            )}
-
-                            {totalCost > 0 && !hasEnoughBalance && missingAmount > 0 && (
-                              <InsufficientBalancePrompt
-                                missingAmountKopeks={missingAmount}
-                                compact
-                              />
-                            )}
-
-                            <button
-                              onClick={() =>
-                                updateCountriesMutation.mutate(selectedServersToUpdate)
-                              }
-                              disabled={
-                                updateCountriesMutation.isPending ||
-                                selectedServersToUpdate.length === 0 ||
-                                (totalCost > 0 && !hasEnoughBalance)
-                              }
-                              className="btn-primary w-full py-3"
-                            >
-                              {updateCountriesMutation.isPending ? (
-                                <span className="flex items-center justify-center gap-2">
-                                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                                </span>
-                              ) : (
-                                t('subscription.serverManagement.applyChanges')
-                              )}
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="py-2 text-center text-sm text-dark-500">
-                            {t('subscription.serverManagement.selectServersHint')}
-                          </div>
-                        );
-                      })()}
-
-                      {updateCountriesMutation.isError && (
-                        <div className="text-center text-sm text-error-400">
-                          {getErrorMessage(updateCountriesMutation.error)}
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="py-4 text-center text-sm text-dark-400">
-                      {t('subscription.serverManagement.noServersAvailable')}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+        !subscription.is_limited && (
+          <div className="space-y-3">
+            <DeleteSubscriptionSheet
+              subscriptionId={subscription.id}
+              open={showDeleteSheet}
+              onOpen={() => setShowDeleteSheet(true)}
+              onClose={() => setShowDeleteSheet(false)}
+              textSecondary={g.textSecondary}
+              onDeleted={() => {
+                queryClient.invalidateQueries({ queryKey: ['subscriptions-list'] });
+                navigate('/subscriptions', { replace: true });
+              }}
+            />
           </div>
         )}
+
+      {/* Additional Options (Buy Devices) */}
+      {subscription && showsAddonOptions(subscription) && (
+        <div
+          className="relative overflow-hidden rounded-3xl"
+          style={{
+            background: g.cardBg,
+            border: `1px solid ${g.cardBorder}`,
+            boxShadow: g.shadow,
+            padding: '24px 28px',
+          }}
+        >
+          <h2 className="mb-4 text-base font-bold tracking-tight text-dark-50">
+            {t('subscription.additionalOptions.title')}
+          </h2>
+
+          {/* Buy Devices */}
+          <DeviceTopupSheet
+            open={showDeviceTopup}
+            onOpen={() => setShowDeviceTopup(true)}
+            onClose={() => setShowDeviceTopup(false)}
+            subscription={subscription}
+            subscriptionId={subscriptionId}
+            devicesToAdd={devicesToAdd}
+            onDevicesToAddChange={setDevicesToAdd}
+            purchaseOptions={purchaseOptions}
+            isDark={isDark}
+          />
+
+          {/* Reduce Devices */}
+          <div className="mt-4">
+            <DeviceReductionSheet
+              open={showDeviceReduction}
+              onOpen={() => setShowDeviceReduction(true)}
+              onClose={() => setShowDeviceReduction(false)}
+              subscriptionPresent={!!subscription}
+              subscriptionId={subscriptionId}
+              targetDeviceLimit={targetDeviceLimit}
+              onTargetDeviceLimitChange={setTargetDeviceLimit}
+              isDark={isDark}
+            />
+          </div>
+
+          {/* Buy Traffic */}
+          {subscription.traffic_limit_gb > 0 && (
+            <div className="mt-4">
+              <TrafficTopupSheet
+                open={showTrafficTopup}
+                onOpen={() => setShowTrafficTopup(true)}
+                onClose={() => setShowTrafficTopup(false)}
+                subscription={subscription}
+                subscriptionId={subscriptionId}
+                selectedTrafficPackage={selectedTrafficPackage}
+                onSelectedTrafficPackageChange={setSelectedTrafficPackage}
+                purchaseOptions={purchaseOptions}
+                isDark={isDark}
+              />
+            </div>
+          )}
+
+          {/* Server Management - only in classic mode */}
+          {
+            <div className="mt-4">
+              <ServerManagementSheet
+                open={showServerManagement}
+                onOpen={() => setShowServerManagement(true)}
+                onClose={() => setShowServerManagement(false)}
+                subscription={subscription}
+                subscriptionId={subscriptionId}
+                selectedServers={selectedServersToUpdate}
+                onSelectedServersChange={setSelectedServersToUpdate}
+                purchaseOptions={purchaseOptions}
+                isDark={isDark}
+              />
+            </div>
+          }
+        </div>
+      )}
+
+      {/* Reissue Subscription — standalone block, not dependent on device_limit */}
+      {subscription && canReissueLink(subscription) && (
+        <div
+          className="relative overflow-hidden rounded-3xl"
+          style={{
+            background: g.cardBg,
+            border: `1px solid ${g.cardBorder}`,
+            boxShadow: g.shadow,
+            padding: '16px 20px',
+          }}
+        >
+          <ReissueLinkButton subscription={subscription} subscriptionId={subscriptionId} />
+        </div>
+      )}
 
       {/* My Devices Section */}
       {subscription && (
@@ -2078,116 +1085,7 @@ export default function Subscription() {
             padding: '24px 28px',
           }}
         >
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-base font-bold tracking-tight text-dark-50">
-              {t('subscription.myDevices')}
-            </h2>
-            {devicesData && devicesData.devices.length > 0 && (
-              <button
-                onClick={() => {
-                  if (confirm(t('subscription.confirmDeleteAllDevices'))) {
-                    deleteAllDevicesMutation.mutate();
-                  }
-                }}
-                disabled={deleteAllDevicesMutation.isPending}
-                className="text-[11px] font-medium transition-colors"
-                style={{ color: '#FF3B5C' }}
-              >
-                {t('subscription.deleteAllDevices')}
-              </button>
-            )}
-          </div>
-
-          {devicesLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <div
-                className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent"
-                style={{
-                  borderColor: 'rgb(var(--color-accent-500))',
-                  borderTopColor: 'transparent',
-                }}
-              />
-            </div>
-          ) : devicesData && devicesData.devices.length > 0 ? (
-            <div className="space-y-2">
-              <div className="mb-2 font-mono text-[11px] text-dark-50/30">
-                {devicesData.device_limit === 0
-                  ? `${devicesData.total} · ∞`
-                  : `${devicesData.total} / ${t('subscription.devices', { count: devicesData.device_limit })}`}
-              </div>
-              {devicesData.devices.map((device) => (
-                <div
-                  key={device.hwid}
-                  className="flex items-center justify-between rounded-[12px] p-3.5"
-                  style={{
-                    background: g.innerBg,
-                    border: `1px solid ${g.innerBorder}`,
-                  }}
-                >
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="flex h-9 w-9 items-center justify-center rounded-[10px]"
-                      style={{ background: g.trackBg }}
-                    >
-                      <svg
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke={g.textSecondary}
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        aria-hidden="true"
-                      >
-                        <path d="M10.5 1.5H8.25A2.25 2.25 0 006 3.75v16.5a2.25 2.25 0 002.25 2.25h7.5A2.25 2.25 0 0018 20.25V3.75a2.25 2.25 0 00-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3" />
-                      </svg>
-                    </div>
-                    <div>
-                      <div className="text-sm font-semibold text-dark-50">
-                        {device.device_model || device.platform}
-                      </div>
-                      <div className="flex items-center gap-1.5 text-[11px] text-dark-50/30">
-                        <span>{device.platform}</span>
-                        <span className="font-mono text-dark-50/20">
-                          {device.hwid.slice(0, 8).toUpperCase()}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => {
-                      if (confirm(t('subscription.confirmDeleteDevice'))) {
-                        deleteDeviceMutation.mutate(device.hwid);
-                      }
-                    }}
-                    disabled={deleteDeviceMutation.isPending}
-                    className="p-2 transition-colors"
-                    style={{ color: g.textFaint }}
-                    title={t('subscription.deleteDevice')}
-                  >
-                    <svg
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
-                    </svg>
-                  </button>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="py-8 text-center text-[12px] text-dark-50/25">
-              {t('subscription.noDevices')}
-            </div>
-          )}
+          <DevicesPanel subscription={subscription} subscriptionId={subscriptionId} />
         </div>
       )}
     </div>

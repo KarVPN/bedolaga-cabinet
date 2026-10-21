@@ -78,12 +78,13 @@ export const userBulkApi = {
         const { done, value } = await reader.read();
         if (done) break;
         pending += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
-        let end: number;
-        while ((end = pending.indexOf('\n\n')) >= 0) {
+        let end = pending.indexOf('\n\n');
+        while (end >= 0) {
           const block = pending.slice(0, end);
           pending = pending.slice(end + 2);
           const data = block.split('\n').find((line) => line.startsWith('data: '));
           if (data) update(JSON.parse(data.slice(6)) as BulkOperation);
+          end = pending.indexOf('\n\n');
         }
       }
     } finally {

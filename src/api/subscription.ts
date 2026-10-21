@@ -1,7 +1,10 @@
 import apiClient from './client';
+import { getYandexCid } from '../utils/yandexCid';
 import type {
   Subscription,
   SubscriptionStatusResponse,
+  SubscriptionListItem,
+  SubscriptionsListResponse,
   RenewalOption,
   TrafficPackage,
   TrialInfo,
@@ -10,54 +13,175 @@ import type {
   PurchasePreview,
   AppConfig,
   TariffRenewalPreview,
+  SbpRecurringInfo,
+  CasheraRecurringInfo,
+  LavaRecurringInfo,
 } from '../types';
 
+/** Helper: build query params with optional subscription_id */
+const withSubId = (subscriptionId?: number, extra?: Record<string, unknown>) => ({
+  params: {
+    ...(subscriptionId != null && { subscription_id: subscriptionId }),
+    ...extra,
+  },
+});
+
+/**
+ * Helper for POST/PATCH/PUT: returns [body, axiosConfig] tuple.
+ * subscription_id goes as query param (backend expects Query(...)), NOT in body.
+ */
+const bodyWithSubId = (
+  body: Record<string, unknown>,
+  subscriptionId?: number,
+): [Record<string, unknown>, { params?: Record<string, unknown> }] => [
+  body,
+  subscriptionId != null ? { params: { subscription_id: subscriptionId } } : {},
+];
+
 export const subscriptionApi = {
-  getSubscription: async (): Promise<SubscriptionStatusResponse> => {
-    const response = await apiClient.get<SubscriptionStatusResponse>('/cabinet/subscription');
+  // ── Multi-tariff endpoints ──────────────────────────────────────────
+
+  getSubscriptions: async (): Promise<SubscriptionsListResponse> => {
+    const response = await apiClient.get<SubscriptionsListResponse>('/cabinet/subscriptions');
     return response.data;
   },
 
-  getRenewalOptions: async (): Promise<RenewalOption[]> => {
-    const response = await apiClient.get<RenewalOption[]>('/cabinet/subscription/renewal-options');
+  getSubscriptionById: async (subscriptionId: number): Promise<SubscriptionListItem> => {
+    const response = await apiClient.get<SubscriptionListItem>(
+      `/cabinet/subscriptions/${subscriptionId}`,
+    );
+    return response.data;
+  },
+
+  deleteSubscription: async (subscriptionId: number): Promise<{ message: string }> => {
+    const response = await apiClient.delete(`/cabinet/subscriptions/${subscriptionId}`);
+    return response.data;
+  },
+
+  // ── Legacy single-subscription status ───────────────────────────────
+
+  getSubscription: async (subscriptionId?: number): Promise<SubscriptionStatusResponse> => {
+    const response = await apiClient.get<SubscriptionStatusResponse>(
+      '/cabinet/subscription',
+      withSubId(subscriptionId),
+    );
+    return response.data;
+  },
+
+  // ── Renewal ─────────────────────────────────────────────────────────
+
+  getRenewalOptions: async (subscriptionId?: number): Promise<RenewalOption[]> => {
+    const response = await apiClient.get<RenewalOption[]>(
+      '/cabinet/subscription/renewal-options',
+      withSubId(subscriptionId),
+    );
     return response.data;
   },
 
   renewSubscription: async (
     periodDays: number,
+    subscriptionId?: number,
     selectedExtraSquads?: string[],
   ): Promise<{
     message: string;
     new_end_date: string;
     amount_paid_kopeks: number;
   }> => {
-    const response = await apiClient.post('/cabinet/subscription/renew', {
-      period_days: periodDays,
-      selected_extra_squads: selectedExtraSquads,
-    });
+    const response = await apiClient.post(
+      '/cabinet/subscription/renew',
+      ...bodyWithSubId(
+        {
+          period_days: periodDays,
+          selected_extra_squads: selectedExtraSquads,
+          yandex_cid: getYandexCid() || undefined,
+        },
+        subscriptionId,
+      ),
+    );
     return response.data;
   },
 
-  getTrafficPackages: async (): Promise<TrafficPackage[]> => {
+  // ── Traffic ─────────────────────────────────────────────────────────
+
+  getTrafficPackages: async (subscriptionId?: number): Promise<TrafficPackage[]> => {
     const response = await apiClient.get<TrafficPackage[]>(
       '/cabinet/subscription/traffic-packages',
+      withSubId(subscriptionId),
     );
     return response.data;
   },
 
   purchaseTraffic: async (
     gb: number,
+    subscriptionId?: number,
   ): Promise<{
     message: string;
     gb_added: number;
     amount_paid_kopeks: number;
   }> => {
-    const response = await apiClient.post('/cabinet/subscription/traffic', { gb });
+    const response = await apiClient.post(
+      '/cabinet/subscription/traffic',
+      ...bodyWithSubId({ gb, yandex_cid: getYandexCid() || undefined }, subscriptionId),
+    );
     return response.data;
   },
 
+  switchTraffic: async (
+    gb: number,
+    subscriptionId?: number,
+  ): Promise<{
+    success: boolean;
+    message: string;
+    old_traffic_gb: number;
+    new_traffic_gb: number;
+    charged_kopeks: number;
+    balance_kopeks: number;
+    balance_label: string;
+  }> => {
+    const response = await apiClient.put(
+      '/cabinet/subscription/traffic',
+      ...bodyWithSubId({ gb, yandex_cid: getYandexCid() || undefined }, subscriptionId),
+    );
+    return response.data;
+  },
+
+  saveTrafficCart: async (trafficGb: number, subscriptionId?: number): Promise<void> => {
+    await apiClient.post(
+      '/cabinet/subscription/traffic/save-cart',
+      ...bodyWithSubId({ gb: trafficGb }, subscriptionId),
+    );
+  },
+
+  refreshTraffic: async (
+    subscriptionId?: number,
+  ): Promise<{
+    success: boolean;
+    cached: boolean;
+    rate_limited?: boolean;
+    retry_after_seconds?: number;
+    source?: string;
+    traffic_used_bytes: number;
+    traffic_used_gb: number;
+    traffic_limit_bytes: number;
+    traffic_limit_gb: number;
+    traffic_used_percent: number;
+    is_unlimited: boolean;
+    lifetime_used_bytes?: number;
+    lifetime_used_gb?: number;
+  }> => {
+    const response = await apiClient.post(
+      '/cabinet/subscription/refresh-traffic',
+      {},
+      withSubId(subscriptionId),
+    );
+    return response.data;
+  },
+
+  // ── Devices ─────────────────────────────────────────────────────────
+
   purchaseDevices: async (
     devices: number,
+    subscriptionId?: number,
   ): Promise<{
     success: boolean;
     message: string;
@@ -68,15 +192,20 @@ export const subscriptionApi = {
     balance_kopeks: number;
     balance_label: string;
   }> => {
-    const response = await apiClient.post('/cabinet/subscription/devices/purchase', { devices });
+    const response = await apiClient.post(
+      '/cabinet/subscription/devices/purchase',
+      ...bodyWithSubId({ devices, yandex_cid: getYandexCid() || undefined }, subscriptionId),
+    );
     return response.data;
   },
 
   getDevicePrice: async (
     devices: number = 1,
+    subscriptionId?: number,
   ): Promise<{
     available: boolean;
     reason?: string;
+    reason_code?: string;
     devices?: number;
     price_per_device_kopeks?: number;
     price_per_device_label?: string;
@@ -87,66 +216,278 @@ export const subscriptionApi = {
     can_add?: number;
     days_left?: number;
     base_device_price_kopeks?: number;
-    // Discount fields (from promo group)
     original_price_per_device_kopeks?: number;
     base_total_price_kopeks?: number;
     discount_percent?: number;
     discount_kopeks?: number;
   }> => {
     const response = await apiClient.get('/cabinet/subscription/devices/price', {
-      params: { devices },
+      params: {
+        devices,
+        ...(subscriptionId != null && { subscription_id: subscriptionId }),
+      },
     });
     return response.data;
   },
 
-  saveDevicesCart: async (devices: number): Promise<void> => {
-    await apiClient.post('/cabinet/subscription/devices/save-cart', { devices });
+  saveDevicesCart: async (devices: number, subscriptionId?: number): Promise<void> => {
+    await apiClient.post(
+      '/cabinet/subscription/devices/save-cart',
+      ...bodyWithSubId({ devices }, subscriptionId),
+    );
   },
 
-  getDeviceReductionInfo: async (): Promise<{
+  getDeviceReductionInfo: async (
+    subscriptionId?: number,
+  ): Promise<{
     available: boolean;
     reason?: string;
+    reason_code?: string;
     current_device_limit: number;
     min_device_limit: number;
     can_reduce: number;
     connected_devices_count: number;
   }> => {
-    const response = await apiClient.get('/cabinet/subscription/devices/reduction-info');
+    const response = await apiClient.get(
+      '/cabinet/subscription/devices/reduction-info',
+      withSubId(subscriptionId),
+    );
     return response.data;
   },
 
   reduceDevices: async (
     newDeviceLimit: number,
+    subscriptionId?: number,
   ): Promise<{
     success: boolean;
     message: string;
     old_device_limit: number;
     new_device_limit: number;
   }> => {
-    const response = await apiClient.post('/cabinet/subscription/devices/reduce', {
-      new_device_limit: newDeviceLimit,
-    });
+    const response = await apiClient.post(
+      '/cabinet/subscription/devices/reduce',
+      ...bodyWithSubId({ new_device_limit: newDeviceLimit }, subscriptionId),
+    );
     return response.data;
   },
 
-  saveTrafficCart: async (trafficGb: number): Promise<void> => {
-    await apiClient.post('/cabinet/subscription/traffic/save-cart', { gb: trafficGb });
+  getDevices: async (
+    subscriptionId?: number,
+  ): Promise<{
+    devices: Array<{
+      hwid: string;
+      platform: string;
+      device_model: string;
+      created_at: string | null;
+      local_name?: string | null;
+    }>;
+    total: number;
+    device_limit: number;
+  }> => {
+    const response = await apiClient.get(
+      '/cabinet/subscription/devices',
+      withSubId(subscriptionId),
+    );
+    return response.data;
   },
+
+  /**
+   * Persist a user-local alias for a device. Pass an empty/null `name` to
+   * clear the alias. Returns the final `local_name` after server-side
+   * normalization (trimmed + length-capped).
+   *
+   * Scope is per-(user, hwid), so the same alias appears across all of
+   * the user's subscriptions in multi-tariff mode.
+   */
+  renameDevice: async (
+    hwid: string,
+    name: string | null,
+    subscriptionId?: number,
+  ): Promise<{ hwid: string; local_name: string | null }> => {
+    const response = await apiClient.patch(
+      `/cabinet/subscription/devices/${encodeURIComponent(hwid)}/name`,
+      { name },
+      withSubId(subscriptionId),
+    );
+    return response.data;
+  },
+
+  deleteDevice: async (
+    hwid: string,
+    subscriptionId?: number,
+  ): Promise<{
+    success: boolean;
+    message: string;
+    deleted_hwid: string;
+  }> => {
+    const response = await apiClient.delete(
+      `/cabinet/subscription/devices/${encodeURIComponent(hwid)}`,
+      withSubId(subscriptionId),
+    );
+    return response.data;
+  },
+
+  deleteAllDevices: async (
+    subscriptionId?: number,
+  ): Promise<{
+    success: boolean;
+    message: string;
+    deleted_count: number;
+  }> => {
+    const response = await apiClient.delete(
+      '/cabinet/subscription/devices',
+      withSubId(subscriptionId),
+    );
+    return response.data;
+  },
+
+  // ── Autopay ─────────────────────────────────────────────────────────
 
   updateAutopay: async (
     enabled: boolean,
     daysBefore?: number,
+    subscriptionId?: number,
   ): Promise<{
     message: string;
     autopay_enabled: boolean;
     autopay_days_before: number;
   }> => {
-    const response = await apiClient.patch('/cabinet/subscription/autopay', {
-      enabled,
-      days_before: daysBefore,
-    });
+    const response = await apiClient.patch(
+      '/cabinet/subscription/autopay',
+      { enabled, days_before: daysBefore },
+      withSubId(subscriptionId),
+    );
     return response.data;
   },
+
+  // ── SBP recurring (Platega) ───────────────────────────────────────────
+
+  getSbpRecurring: async (subscriptionId?: number): Promise<SbpRecurringInfo> => {
+    const response = await apiClient.get<SbpRecurringInfo>(
+      '/cabinet/subscription/platega-recurrent',
+      withSubId(subscriptionId),
+    );
+    return response.data;
+  },
+
+  enableSbpRecurring: async (
+    subscriptionId?: number,
+  ): Promise<{ status: string; redirect_url: string | null }> => {
+    const response = await apiClient.post(
+      '/cabinet/subscription/platega-recurrent/enable',
+      ...bodyWithSubId({}, subscriptionId),
+    );
+    return response.data;
+  },
+
+  cancelSbpRecurring: async (subscriptionId?: number): Promise<{ status: string }> => {
+    const response = await apiClient.post(
+      '/cabinet/subscription/platega-recurrent/cancel',
+      ...bodyWithSubId({}, subscriptionId),
+    );
+    return response.data;
+  },
+
+  /**
+   * Оформление подписки на тариф через СБП-автопродление: первое списание =
+   * подтверждение привязки в банке. Для нового тарифа бэкенд создаёт
+   * неактивную заготовку, которую активирует первый чардж.
+   */
+  purchaseWithSbpRecurring: async (
+    tariffId: number,
+  ): Promise<{ status: string; redirect_url: string | null; subscription_id: number }> => {
+    const response = await apiClient.post(
+      '/cabinet/subscription/platega-recurrent/purchase',
+      {},
+      { params: { tariff_id: tariffId } },
+    );
+    return response.data;
+  },
+
+  // ── Recurring (Lava) ──────────────────────────────────────────────────
+
+  getLavaRecurring: async (subscriptionId?: number): Promise<LavaRecurringInfo> => {
+    const response = await apiClient.get<LavaRecurringInfo>(
+      '/cabinet/subscription/lava-recurrent',
+      withSubId(subscriptionId),
+    );
+    return response.data;
+  },
+
+  enableLavaRecurring: async (
+    subscriptionId?: number,
+  ): Promise<{ status: string; redirect_url: string | null }> => {
+    const response = await apiClient.post(
+      '/cabinet/subscription/lava-recurrent/enable',
+      ...bodyWithSubId({}, subscriptionId),
+    );
+    return response.data;
+  },
+
+  cancelLavaRecurring: async (subscriptionId?: number): Promise<{ status: string }> => {
+    const response = await apiClient.post(
+      '/cabinet/subscription/lava-recurrent/cancel',
+      ...bodyWithSubId({}, subscriptionId),
+    );
+    return response.data;
+  },
+
+  /**
+   * Оформление подписки на тариф привязкой Lava: первое списание оплачивается
+   * по возвращённой ссылке и активирует подписку.
+   */
+  purchaseWithLavaRecurring: async (
+    tariffId: number,
+  ): Promise<{ status: string; redirect_url: string | null; subscription_id: number }> => {
+    const response = await apiClient.post(
+      '/cabinet/subscription/lava-recurrent/purchase',
+      {},
+      { params: { tariff_id: tariffId } },
+    );
+    return response.data;
+  },
+
+  // ── Recurring (Cashera) ───────────────────────────────────────────────
+
+  getCasheraRecurring: async (subscriptionId?: number): Promise<CasheraRecurringInfo> => {
+    const response = await apiClient.get<CasheraRecurringInfo>(
+      '/cabinet/subscription/cashera-recurrent',
+      withSubId(subscriptionId),
+    );
+    return response.data;
+  },
+
+  enableCasheraRecurring: async (
+    subscriptionId?: number,
+  ): Promise<{ status: string; redirect_url: string | null }> => {
+    const response = await apiClient.post(
+      '/cabinet/subscription/cashera-recurrent/enable',
+      ...bodyWithSubId({}, subscriptionId),
+    );
+    return response.data;
+  },
+
+  cancelCasheraRecurring: async (subscriptionId?: number): Promise<{ status: string }> => {
+    const response = await apiClient.post(
+      '/cabinet/subscription/cashera-recurrent/cancel',
+      ...bodyWithSubId({}, subscriptionId),
+    );
+    return response.data;
+  },
+
+  /** Оформление подписки на тариф привязкой Cashera: клиент подтверждает автосписания по ссылке. */
+  purchaseWithCasheraRecurring: async (
+    tariffId: number,
+  ): Promise<{ status: string; redirect_url: string | null; subscription_id: number }> => {
+    const response = await apiClient.post(
+      '/cabinet/subscription/cashera-recurrent/purchase',
+      {},
+      { params: { tariff_id: tariffId } },
+    );
+    return response.data;
+  },
+
+  // ── Trial ───────────────────────────────────────────────────────────
 
   getTrialInfo: async (): Promise<TrialInfo> => {
     const response = await apiClient.get<TrialInfo>('/cabinet/subscription/trial');
@@ -154,36 +495,46 @@ export const subscriptionApi = {
   },
 
   activateTrial: async (): Promise<Subscription> => {
-    const response = await apiClient.post<Subscription>('/cabinet/subscription/trial');
+    const response = await apiClient.post<Subscription>('/cabinet/subscription/trial', {
+      yandex_cid: getYandexCid() || undefined,
+    });
     return response.data;
   },
 
-  getPurchaseOptions: async (): Promise<PurchaseOptions> => {
-    const response = await apiClient.get<PurchaseOptions>('/cabinet/subscription/purchase-options');
+  // ── Purchase ────────────────────────────────────────────────────────
+
+  getPurchaseOptions: async (subscriptionId?: number): Promise<PurchaseOptions> => {
+    const response = await apiClient.get<PurchaseOptions>(
+      '/cabinet/subscription/purchase-options',
+      withSubId(subscriptionId),
+    );
     return response.data;
   },
 
-  previewPurchase: async (selection: PurchaseSelection): Promise<PurchasePreview> => {
+  previewPurchase: async (
+    selection: PurchaseSelection,
+    subscriptionId?: number,
+  ): Promise<PurchasePreview> => {
     const response = await apiClient.post<PurchasePreview>(
       '/cabinet/subscription/purchase-preview',
-      {
-        selection,
-      },
+      ...bodyWithSubId({ selection }, subscriptionId),
     );
     return response.data;
   },
 
   submitPurchase: async (
     selection: PurchaseSelection,
+    subscriptionId?: number,
   ): Promise<{
     success: boolean;
     message: string;
     subscription: Subscription;
     was_trial_conversion: boolean;
   }> => {
-    const response = await apiClient.post('/cabinet/subscription/purchase', {
-      selection,
-    });
+    const response = await apiClient.post(
+      '/cabinet/subscription/purchase',
+      ...bodyWithSubId({ selection, yandex_cid: getYandexCid() || undefined }, subscriptionId),
+    );
     return response.data;
   },
 
@@ -191,6 +542,14 @@ export const subscriptionApi = {
     tariffId: number,
     periodDays: number,
     trafficGb?: number,
+    /**
+     * Subscription ID being renewed. Pass this when the user clicked
+     * "Renew" on an existing subscription so the backend can resolve
+     * the target row by ID instead of doing a (user_id, tariff_id)
+     * re-lookup that races with concurrent panel webhooks. Omit when
+     * this is a fresh purchase from the catalog.
+     */
+    subscriptionId?: number,
     selectedExtraSquads?: string[],
   ): Promise<{
     success: boolean;
@@ -205,7 +564,9 @@ export const subscriptionApi = {
       tariff_id: tariffId,
       period_days: periodDays,
       traffic_gb: trafficGb,
+      subscription_id: subscriptionId,
       selected_extra_squads: selectedExtraSquads,
+      yandex_cid: getYandexCid() || undefined,
     });
     return response.data;
   },
@@ -215,6 +576,7 @@ export const subscriptionApi = {
     periodDays: number,
     trafficGb?: number,
     selectedExtraSquads?: string[],
+    subscriptionId?: number,
   ): Promise<TariffRenewalPreview> => {
     const response = await apiClient.post<TariffRenewalPreview>(
       '/cabinet/subscription/tariff-renewal-preview',
@@ -223,17 +585,17 @@ export const subscriptionApi = {
         period_days: periodDays,
         traffic_gb: trafficGb,
         selected_extra_squads: selectedExtraSquads,
+        subscription_id: subscriptionId,
       },
     );
     return response.data;
   },
 
-  getAppConfig: async (): Promise<AppConfig> => {
-    const response = await apiClient.get<AppConfig>('/cabinet/subscription/app-config');
-    return response.data;
-  },
+  // ── Countries / Servers ─────────────────────────────────────────────
 
-  getCountries: async (): Promise<{
+  getCountries: async (
+    subscriptionId?: number,
+  ): Promise<{
     countries: Array<{
       uuid: string;
       name: string;
@@ -253,12 +615,16 @@ export const subscriptionApi = {
     days_left: number;
     discount_percent: number;
   }> => {
-    const response = await apiClient.get('/cabinet/subscription/countries');
+    const response = await apiClient.get(
+      '/cabinet/subscription/countries',
+      withSubId(subscriptionId),
+    );
     return response.data;
   },
 
   updateCountries: async (
     countries: string[],
+    subscriptionId?: number,
   ): Promise<{
     message: string;
     added: string[];
@@ -266,22 +632,35 @@ export const subscriptionApi = {
     amount_paid_kopeks: number;
     connected_squads: string[];
   }> => {
-    const response = await apiClient.post('/cabinet/subscription/countries', { countries });
+    const response = await apiClient.post(
+      '/cabinet/subscription/countries',
+      ...bodyWithSubId({ countries, yandex_cid: getYandexCid() || undefined }, subscriptionId),
+    );
     return response.data;
   },
 
-  getConnectionLink: async (): Promise<{
+  // ── Connection ──────────────────────────────────────────────────────
+
+  getConnectionLink: async (
+    subscriptionId?: number,
+  ): Promise<{
     subscription_url: string | null;
     display_link: string | null;
     happ_redirect_link: string | null;
     happ_scheme_link: string | null;
+    happ_cryptolink?: string | null;
+    happ_crypto_link?: string | null;
+    happ_link?: string | null;
     connect_mode: string;
     hide_link: boolean;
     instructions: {
       steps: string[];
     };
   }> => {
-    const response = await apiClient.get('/cabinet/subscription/connection-link');
+    const response = await apiClient.get(
+      '/cabinet/subscription/connection-link',
+      withSubId(subscriptionId),
+    );
     return response.data;
   },
 
@@ -300,44 +679,19 @@ export const subscriptionApi = {
     return response.data;
   },
 
-  getDevices: async (): Promise<{
-    devices: Array<{
-      hwid: string;
-      platform: string;
-      device_model: string;
-      created_at: string | null;
-    }>;
-    total: number;
-    device_limit: number;
-  }> => {
-    const response = await apiClient.get('/cabinet/subscription/devices');
-    return response.data;
-  },
-
-  deleteDevice: async (
-    hwid: string,
-  ): Promise<{
-    success: boolean;
-    message: string;
-    deleted_hwid: string;
-  }> => {
-    const response = await apiClient.delete(
-      `/cabinet/subscription/devices/${encodeURIComponent(hwid)}`,
+  getAppConfig: async (subscriptionId?: number): Promise<AppConfig> => {
+    const response = await apiClient.get<AppConfig>(
+      '/cabinet/subscription/app-config',
+      withSubId(subscriptionId),
     );
     return response.data;
   },
 
-  deleteAllDevices: async (): Promise<{
-    success: boolean;
-    message: string;
-    deleted_count: number;
-  }> => {
-    const response = await apiClient.delete('/cabinet/subscription/devices');
-    return response.data;
-  },
+  // ── Tariff switch ───────────────────────────────────────────────────
 
   previewTariffSwitch: async (
     tariffId: number,
+    subscriptionId?: number,
   ): Promise<{
     can_switch: boolean;
     current_tariff_id: number | null;
@@ -353,20 +707,20 @@ export const subscriptionApi = {
     missing_amount_kopeks: number;
     missing_amount_label: string;
     is_upgrade: boolean;
-    // Discount fields (from promo group)
     base_upgrade_cost_kopeks?: number;
     discount_percent?: number;
     discount_kopeks?: number;
   }> => {
-    const response = await apiClient.post('/cabinet/subscription/tariff/switch/preview', {
-      tariff_id: tariffId,
-      period_days: 30, // Default period for switch
-    });
+    const response = await apiClient.post(
+      '/cabinet/subscription/tariff/switch/preview',
+      ...bodyWithSubId({ tariff_id: tariffId, period_days: 30 }, subscriptionId),
+    );
     return response.data;
   },
 
   switchTariff: async (
     tariffId: number,
+    subscriptionId?: number,
   ): Promise<{
     success: boolean;
     message: string;
@@ -378,56 +732,43 @@ export const subscriptionApi = {
     balance_kopeks: number;
     balance_label: string;
   }> => {
-    const response = await apiClient.post('/cabinet/subscription/tariff/switch', {
-      tariff_id: tariffId,
-      period_days: 30,
-    });
+    const response = await apiClient.post(
+      '/cabinet/subscription/tariff/switch',
+      ...bodyWithSubId(
+        { tariff_id: tariffId, period_days: 30, yandex_cid: getYandexCid() || undefined },
+        subscriptionId,
+      ),
+    );
     return response.data;
   },
 
-  togglePause: async (): Promise<{
+  // ── Revoke (reissue) ────────────────────────────────────────────────
+
+  revokeSubscription: async (subscriptionId?: number) => {
+    const response = await apiClient.post(
+      '/cabinet/subscription/revoke',
+      undefined,
+      withSubId(subscriptionId),
+    );
+    return response.data;
+  },
+
+  // ── Daily subscription ──────────────────────────────────────────────
+
+  togglePause: async (
+    subscriptionId?: number,
+  ): Promise<{
     success: boolean;
     message: string;
     is_paused: boolean;
     balance_kopeks: number;
     balance_label: string;
   }> => {
-    const response = await apiClient.post('/cabinet/subscription/pause');
-    return response.data;
-  },
-
-  switchTraffic: async (
-    gb: number,
-  ): Promise<{
-    success: boolean;
-    message: string;
-    old_traffic_gb: number;
-    new_traffic_gb: number;
-    charged_kopeks: number;
-    balance_kopeks: number;
-    balance_label: string;
-  }> => {
-    const response = await apiClient.put('/cabinet/subscription/traffic', { gb });
-    return response.data;
-  },
-
-  // Refresh traffic usage from RemnaWave (rate limited: 1 per 60 seconds)
-  refreshTraffic: async (): Promise<{
-    success: boolean;
-    cached: boolean;
-    rate_limited?: boolean;
-    retry_after_seconds?: number;
-    source?: string;
-    traffic_used_bytes: number;
-    traffic_used_gb: number;
-    traffic_limit_bytes: number;
-    traffic_limit_gb: number;
-    traffic_used_percent: number;
-    is_unlimited: boolean;
-    lifetime_used_bytes?: number;
-    lifetime_used_gb?: number;
-  }> => {
-    const response = await apiClient.post('/cabinet/subscription/refresh-traffic');
+    const response = await apiClient.post(
+      '/cabinet/subscription/pause',
+      undefined,
+      withSubId(subscriptionId),
+    );
     return response.data;
   },
 };

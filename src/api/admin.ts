@@ -8,6 +8,12 @@ export interface AdminTicketUser {
   last_name: string | null;
 }
 
+export interface AdminTicketMediaItem {
+  type: 'photo' | 'video' | 'document';
+  file_id: string;
+  caption?: string | null;
+}
+
 export interface AdminTicketMessage {
   id: number;
   message_text: string;
@@ -16,6 +22,7 @@ export interface AdminTicketMessage {
   media_type: string | null;
   media_file_id: string | null;
   media_caption: string | null;
+  media_items?: AdminTicketMediaItem[] | null;
   created_at: string;
 }
 
@@ -61,6 +68,8 @@ export interface TicketSettings {
   support_system_mode: string; // tickets, contact, both
   cabinet_user_notifications_enabled: boolean;
   cabinet_admin_notifications_enabled: boolean;
+  /** Поля, закреплённые в .env: из кабинета их не изменить. */
+  env_locked?: string[];
 }
 
 export interface TicketSettingsUpdate {
@@ -118,7 +127,12 @@ export const adminApi = {
   replyToTicket: async (
     ticketId: number,
     message: string,
-    media?: { media_type?: string; media_file_id?: string; media_caption?: string },
+    media?: {
+      media_type?: string;
+      media_file_id?: string;
+      media_caption?: string;
+      media_items?: AdminTicketMediaItem[];
+    },
   ): Promise<AdminTicketMessage> => {
     const response = await apiClient.post(`/cabinet/admin/tickets/${ticketId}/reply`, {
       message,
@@ -162,15 +176,11 @@ export interface NodeStatus {
   is_disabled: boolean;
   users_online: number;
   traffic_used_bytes?: number;
-  uptime?: string;
-  xray_version?: string;
-  node_version?: string;
   last_status_message?: string;
-  xray_uptime?: string;
+  xray_uptime: number;
   is_xray_running?: boolean;
-  cpu_count?: number;
-  cpu_model?: string;
-  total_ram?: string;
+  versions?: { xray: string; node: string } | null;
+  system?: Record<string, unknown> | null;
   country_code?: string;
 }
 

@@ -1,5 +1,5 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
-import { retrieveRawInitData } from '@telegram-apps/sdk-react';
+import { getTelegramInitData as readTelegramInitData } from '../utils/telegramInitData';
 import {
   tokenStorage,
   isTokenExpired,
@@ -7,6 +7,7 @@ import {
   safeRedirectToLogin,
 } from '../utils/token';
 import { useBlockingStore } from '../store/blocking';
+import { reportPossibleBackendDown, markBackendReached } from './health';
 import { API } from '../config/constants';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
@@ -40,13 +41,11 @@ function ensureCsrfToken(): string {
 const getTelegramInitData = (): string | null => {
   if (typeof window === 'undefined') return null;
 
-  try {
-    const raw = retrieveRawInitData();
-    if (raw) {
-      tokenStorage.setTelegramInitData(raw);
-      return raw;
-    }
-  } catch {}
+  const raw = readTelegramInitData();
+  if (raw) {
+    tokenStorage.setTelegramInitData(raw);
+    return raw;
+  }
 
   return tokenStorage.getTelegramInitData();
 };
@@ -69,7 +68,6 @@ const AUTH_ENDPOINTS = [
   '/cabinet/auth/password/forgot',
   '/cabinet/auth/password/reset',
   '/cabinet/auth/oauth/',
-  '/cabinet/auth/merge/',
   '/cabinet/auth/account/link/server-complete',
   '/cabinet/auth/deeplink/',
   '/cabinet/auth/login/auto',
@@ -94,6 +92,12 @@ apiClient.interceptors.request.use(async (config: InternalAxiosRequestConfig) =>
       const newToken = await tokenRefreshManager.refreshAccessToken();
       if (newToken) {
         token = newToken;
+      } else if (tokenRefreshManager.lastFailureWasTransport) {
+        // Backend unreachable (not a rejected token): keep the session intact so
+        // the ServiceUnavailableScreen can auto-recover once the backend returns,
+        // instead of wiping tokens and stranding the user on /login. Let the
+        // request go out with the stale token; it will fail and be handled.
+        return config;
       } else {
         tokenStorage.clearTokens();
         safeRedirectToLogin();
@@ -152,6 +156,13 @@ export interface BlacklistedError {
   message: string;
 }
 
+export interface AccountDeletedError {
+  code: 'account_deleted';
+  message: string;
+  bot_username?: string;
+  telegram_deep_link?: string;
+}
+
 export function isMaintenanceError(
   error: unknown,
 ): error is { response: { status: 503; data: { detail: MaintenanceError } } } {
@@ -179,10 +190,36 @@ export function isBlacklistedError(
   return err.response?.status === 403 && err.response?.data?.detail?.code === 'blacklisted';
 }
 
+export function isAccountDeletedError(
+  error: unknown,
+): error is { response: { status: 403; data: { detail: AccountDeletedError } } } {
+  if (!error || typeof error !== 'object') return false;
+  const err = error as AxiosError<{ detail: AccountDeletedError }>;
+  return err.response?.status === 403 && err.response?.data?.detail?.code === 'account_deleted';
+}
+
 apiClient.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // First successful response means the app reached the backend at least once
+    // (it bootstrapped). Recovery from a later outage can then just lift the
+    // overlay instead of hard-reloading and losing unsaved UI state.
+    markBackendReached();
+    return response;
+  },
   async (error: AxiosError) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
+
+    // Transport-level failure: no HTTP response at all (backend unreachable, DNS
+    // failure, connection refused, timeout). All the coded guards below need
+    // `error.response`, so this case had zero handling and produced a blank
+    // screen during bootstrap. Confirm the outage with a liveness probe (so a
+    // one-off blip doesn't blank an already-loaded app) and, if confirmed, flip
+    // the full-screen ServiceUnavailableScreen. Fire-and-forget — the original
+    // request still rejects now. Axios cancellations are not outages.
+    if (!error.response && error.code !== 'ERR_CANCELED') {
+      void reportPossibleBackendDown();
+      return Promise.reject(error);
+    }
 
     if (isMaintenanceError(error)) {
       const detail = (error.response?.data as { detail: MaintenanceError }).detail;
@@ -211,6 +248,21 @@ apiClient.interceptors.response.use(
       return Promise.reject(error);
     }
 
+    if (isAccountDeletedError(error)) {
+      const detail = (error.response?.data as { detail: AccountDeletedError }).detail;
+      // Surface the deleted-account screen. The auth flow (initData login)
+      // is allowed to auto-revive; this branch is for token-bearing
+      // sessions where the user is already in the cabinet but their row
+      // got marked DELETED out-of-band, and for password-only logins
+      // that can't be silently revived.
+      useBlockingStore.getState().setAccountDeleted({
+        message: detail.message,
+        bot_username: detail.bot_username,
+        telegram_deep_link: detail.telegram_deep_link,
+      });
+      return Promise.reject(error);
+    }
+
     if (error.response?.status === 401 && !originalRequest._retry) {
       const requestUrl = originalRequest.url || '';
 
@@ -226,6 +278,9 @@ apiClient.interceptors.response.use(
           originalRequest.headers.Authorization = `Bearer ${newToken}`;
         }
         return apiClient(originalRequest);
+      } else if (tokenRefreshManager.lastFailureWasTransport) {
+        // Backend died between the 401 and the refresh: keep the session so the
+        // ServiceUnavailableScreen can recover, rather than logging the user out.
       } else {
         tokenStorage.clearTokens();
         safeRedirectToLogin();

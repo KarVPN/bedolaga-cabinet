@@ -1,5 +1,11 @@
 import apiClient from './client';
-import type { Ticket, TicketDetail, TicketMessage, PaginatedResponse } from '../types';
+import type {
+  Ticket,
+  TicketDetail,
+  TicketMessage,
+  TicketMediaItem,
+  PaginatedResponse,
+} from '../types';
 
 // Media upload response type
 interface MediaUploadResponse {
@@ -14,6 +20,7 @@ interface MediaParams {
   media_type?: string;
   media_file_id?: string;
   media_caption?: string;
+  media_items?: TicketMediaItem[];
 }
 
 export const ticketsApi = {
@@ -72,9 +79,11 @@ export const ticketsApi = {
     return response.data;
   },
 
-  // Get media URL for display
-  getMediaUrl: (fileId: string): string => {
+  // Get media URL for display. The signed `token` comes from the ticket
+  // response and is required by the backend (a raw file_id alone 404s).
+  getMediaUrl: (fileId: string, token?: string | null): string => {
     const baseUrl = import.meta.env.VITE_API_URL || '';
-    return `${baseUrl}/cabinet/media/${fileId}`;
+    const suffix = token ? `?token=${encodeURIComponent(token)}` : '';
+    return `${baseUrl}/cabinet/media/${fileId}${suffix}`;
   },
 };

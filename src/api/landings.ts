@@ -15,6 +15,8 @@ export interface LandingTariffPeriod {
   original_price_kopeks: number | null;
   original_price_label: string | null;
   discount_percent: number | null;
+  /** Период, отмеченный оператором как самый выгодный. */
+  is_highlighted?: boolean;
 }
 
 export interface LandingTariff {
@@ -25,6 +27,11 @@ export interface LandingTariff {
   device_limit: number;
   tier_level: number;
   periods: LandingTariffPeriod[];
+  /** Тариф, отмеченный оператором как выгодный. */
+  is_highlighted?: boolean;
+  /** Daily tariff: the single purchasable period is 1 day, priced per day. */
+  is_daily?: boolean;
+  daily_price_kopeks?: number;
 }
 
 export interface LandingPaymentMethodSubOption {
@@ -89,6 +96,11 @@ export interface LandingConfig {
   meta_description: string | null;
   discount: LandingDiscountInfo | null;
   background_config: AnimationConfig | null;
+  analytics_view_enabled: boolean;
+  analytics_view_goal: string;
+  analytics_click_enabled: boolean;
+  analytics_click_goal: string;
+  sticky_pay_button: boolean;
 }
 
 export interface PurchaseRequest {
@@ -101,6 +113,15 @@ export interface PurchaseRequest {
   gift_recipient_type?: 'email' | 'telegram';
   gift_recipient_value?: string;
   gift_message?: string;
+  language?: string;
+  // Yandex offline-conversions linkage (bot PR #2851 backend fields)
+  yandex_cid?: string;
+  referrer?: string;
+  subid?: string;
+  // Слаг рекламной кампании: без него покупка гостем не попадает в статистику
+  // кампании и не даёт её бонус — auth-флоу, который привязывает кампанию
+  // обычно, на этом пути не срабатывает.
+  campaign_slug?: string;
 }
 
 export interface PurchaseResponse {
@@ -124,6 +145,21 @@ export interface PurchaseStatus {
   auto_login_token: string | null;
   recipient_in_bot: boolean | null;
   bot_link: string | null;
+  // Transferable gift claim link — the buyer forwards this; whoever activates it
+  // gets the gift. Derived from token + status (purchase.user is null until claim).
+  is_claimable: boolean;
+  claim_url: string | null;
+  bot_claim_link: string | null;
+}
+
+/** Result returned to the recipient after a successful web (email) gift claim. */
+export interface GiftClaimResult {
+  status: string;
+  tariff_name: string | null;
+  period_days: number | null;
+  subscription_url: string | null;
+  subscription_crypto_link: string | null;
+  auto_login_token: string | null;
 }
 
 /** Locale dict for multi-language text fields (admin API) */
@@ -156,6 +192,8 @@ export interface LandingListItem {
   gift_enabled: boolean;
   tariff_count: number;
   method_count: number;
+  analytics_view_enabled: boolean;
+  analytics_click_enabled: boolean;
   purchase_stats: {
     total: number;
     pending: number;
@@ -194,6 +232,11 @@ export interface LandingDetail {
   discount_ends_at: string | null;
   discount_badge_text: LocaleDict | null;
   background_config: AnimationConfig | null;
+  analytics_view_enabled: boolean;
+  analytics_view_goal: string;
+  analytics_click_enabled: boolean;
+  analytics_click_goal: string;
+  sticky_pay_button: boolean;
 }
 
 export interface LandingCreateRequest {
@@ -216,6 +259,11 @@ export interface LandingCreateRequest {
   discount_ends_at?: string | null;
   discount_badge_text?: LocaleDict | null;
   background_config?: AnimationConfig | null;
+  analytics_view_enabled?: boolean;
+  analytics_view_goal?: string;
+  analytics_click_enabled?: boolean;
+  analytics_click_goal?: string;
+  sticky_pay_button?: boolean;
 }
 
 export type LandingUpdateRequest = Partial<LandingCreateRequest>;
@@ -257,10 +305,23 @@ export const landingApi = {
     const response = await apiClient.post(`/cabinet/landing/activate/${token}`);
     return response.data;
   },
+
+  // Public gift claim page data (no auth — the token is the bearer secret).
+  getGiftClaim: async (token: string): Promise<PurchaseStatus> => {
+    const response = await apiClient.get(`/cabinet/landing/gift/${token}`);
+    return response.data;
+  },
+
+  // Web (email) arm of the gift claim — binds the gift to the given email account.
+  claimGift: async (token: string, email: string): Promise<GiftClaimResult> => {
+    const response = await apiClient.post(`/cabinet/landing/gift/${token}/claim`, { email });
+    return response.data;
+  },
 };
 
 export interface LandingDailyStat {
   date: string;
+  created: number;
   purchases: number;
   revenue_kopeks: number;
   gifts: number;
@@ -273,10 +334,22 @@ export interface LandingTariffStat {
   revenue_kopeks: number;
 }
 
+export interface LandingPaymentMethodStat {
+  method: string;
+  purchases: number;
+  revenue_kopeks: number;
+}
+
+export interface LandingSourceStat {
+  source: string;
+  purchases: number;
+}
+
 export interface LandingStatsResponse {
   total_purchases: number;
   total_revenue_kopeks: number;
   total_gifts: number;
+  total_gifts_claimed: number;
   total_regular: number;
   avg_purchase_kopeks: number;
   total_created: number;
@@ -284,6 +357,8 @@ export interface LandingStatsResponse {
   conversion_rate: number;
   daily_stats: LandingDailyStat[];
   tariff_stats: LandingTariffStat[];
+  payment_method_stats: LandingPaymentMethodStat[];
+  source_stats: LandingSourceStat[];
 }
 
 export type PurchaseItemStatus =
@@ -310,6 +385,7 @@ export interface LandingPurchaseItem {
   status: PurchaseItemStatus;
   created_at: string;
   paid_at: string | null;
+  referrer: string | null;
 }
 
 export interface LandingPurchaseListResponse {
@@ -353,7 +429,10 @@ export const adminLandingsApi = {
   },
 
   getStats: async (id: number): Promise<LandingStatsResponse> => {
-    const response = await apiClient.get(`/cabinet/admin/landings/${id}/stats`);
+    const { USER_TIMEZONE } = await import('../utils/format');
+    const response = await apiClient.get(`/cabinet/admin/landings/${id}/stats`, {
+      params: { tz: USER_TIMEZONE },
+    });
     return response.data;
   },
 

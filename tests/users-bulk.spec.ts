@@ -30,6 +30,10 @@ async function setup(
   page.on('pageerror', (error) => console.error('PAGE ERROR', error));
   const previews: Record<string, unknown>[] = [];
   let runs = 0;
+  let releaseCancelledRun: (() => void) | undefined;
+  const cancelGate = new Promise<void>((resolve) => {
+    releaseCancelledRun = resolve;
+  });
   let current = operation(restored ? { state: 'paused', processed: 12, success: 11 } : {});
   await page.route('**/api/**', async (route) => {
     const req = route.request();
@@ -70,6 +74,7 @@ async function setup(
     } else if (path.endsWith('/cancel')) {
       current = operation({ state: 'running', cancel_requested: true });
       data = current;
+      releaseCancelledRun?.();
     } else if (path.endsWith('/errors')) {
       data = [
         {
@@ -82,7 +87,8 @@ async function setup(
     } else if (path.endsWith('/run')) {
       runs++;
       current = operation({ state: 'running' });
-      await new Promise((resolve) => setTimeout(resolve, mode === 'cancel' ? 1200 : 250));
+      if (mode === 'cancel') await cancelGate;
+      else await new Promise((resolve) => setTimeout(resolve, 250));
       current = operation({
         state: 'completed',
         processed: 25,
@@ -139,11 +145,7 @@ test('selection persists across pages, header becomes indeterminate, filters res
   await expect(page.getByText('Выбрано пользователей: 1', { exact: true })).toBeVisible();
   const header = page.getByRole('checkbox', { name: 'Выбрать всех на этой странице' });
   await expect(header).toHaveJSProperty('indeterminate', true);
-  await page
-    .locator('button')
-    .filter({ has: page.locator('svg path[d="M8.25 4.5l7.5 7.5-7.5 7.5"]') })
-    .last()
-    .click();
+  await page.getByRole('button', { name: 'Следующая страница', exact: true }).click();
   await page.getByRole('checkbox', { name: 'Выбрать User 21', exact: true }).check();
   await expect(page.getByText('Выбрано пользователей: 2', { exact: true })).toBeVisible();
   await page.getByText('Расширенные фильтры', { exact: true }).click();
@@ -228,8 +230,13 @@ test('uncertain outcomes show review details and are not automatically retried',
 
 test('controls fit the mobile viewport', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => localStorage.setItem('cabinet_language', 'ru'));
   await setup(page, true);
   await expect(page.getByRole('button', { name: 'Продолжить', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'К списку пользователей' })).toHaveCount(1);
+  await expect(page.getByPlaceholder('Поиск по email...')).toBeVisible();
+  await expect(page.locator('body')).not.toContainText('admin.users.');
+  await expect(page.getByText('Показано 1-20 из 25', { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );

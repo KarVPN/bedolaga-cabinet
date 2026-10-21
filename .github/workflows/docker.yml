@@ -34,6 +34,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      security-events: write
 
     steps:
       - name: Checkout code
@@ -147,3 +148,20 @@ jobs:
             echo 'Private GHCR package: the VPS needs a token with read:packages.'
             echo 'The token is used for pulling only; it is not part of the image.'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Scan published image with Trivy
+        if: github.event_name != 'pull_request'
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          image-ref: ${{ steps.image.outputs.name }}:sha-${{ github.sha }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: HIGH,CRITICAL
+          exit-code: '0'
+
+      - name: Upload Trivy results to Security tab
+        if: github.event_name != 'pull_request'
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy
