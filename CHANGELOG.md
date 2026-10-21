@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.80.1-karvpn.1](https://github.com/KarVPN/bedolaga-cabinet/compare/v1.80.1...v1.80.1-karvpn.1) (2026-10-21)
+
+
+### Features
+
+* **users:** фильтры и массовые действия с восстановлением ([1680327](https://github.com/KarVPN/bedolaga-cabinet/commit/1680327042597fbbbfcd11f12864e81b6c1adda3))
+* добавить независимую нумерацию KarVPN и стабилизировать журнал ([bef1644](https://github.com/KarVPN/bedolaga-cabinet/commit/bef164434040221c08c370c8e548198910cd9c23))
+* обновить кабинет до 1.80.1 с сохранением KarVPN ([b7a2cc7](https://github.com/KarVPN/bedolaga-cabinet/commit/b7a2cc70cdd66ccfd31f748674b2c166808a050c))
+
+
+### Bug Fixes
+
+* **ui:** исправить позиционирование диалогов массовых действий ([cbe6d8d](https://github.com/KarVPN/bedolaga-cabinet/commit/cbe6d8debfbc8300ddf7d779cbb6fa0f3e274ccc))
+* восстановить подписи журнала и передачу версии релиза ([c474e3e](https://github.com/KarVPN/bedolaga-cabinet/commit/c474e3e5781dac573fa83997e14d443a30fa59dc))
+
 ## [1.80.1](https://github.com/BEDOLAGA-DEV/bedolaga-cabinet/compare/v1.80.0...v1.80.1) (2026-09-29)
 
 
