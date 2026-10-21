@@ -218,7 +218,10 @@ function App() {
       sessionStorage.setItem(processedKey, '1');
     } catch {}
 
-    if (location.pathname === '/balance/top-up/result' && location.search.includes(`method=${method}`)) {
+    if (
+      location.pathname === '/balance/top-up/result' &&
+      location.search.includes(`method=${method}`)
+    ) {
       return;
     }
 

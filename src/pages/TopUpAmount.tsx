@@ -244,7 +244,8 @@ export default function TopUpAmount() {
       }
     },
     onError: (err: unknown) => {
-      const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+      const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data
+        ?.detail;
       const detailCode =
         typeof detail === 'object' && detail !== null && 'code' in detail
           ? String((detail as { code?: string }).code || '')
@@ -257,7 +258,9 @@ export default function TopUpAmount() {
             : '';
 
       if (detailCode === 'yookassa_receipt_contact_required') {
-        setPendingTopUpAmountKopeks((prev) => prev ?? Math.round(convertToRub(parseFloat(amount || '0')) * 100));
+        setPendingTopUpAmountKopeks(
+          (prev) => prev ?? Math.round(convertToRub(parseFloat(amount || '0')) * 100),
+        );
         setReceiptContactError(null);
         setShowReceiptContactModal(true);
         return;

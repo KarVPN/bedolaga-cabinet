@@ -364,7 +364,14 @@ export default function SubscriptionPurchase() {
 
   useEffect(() => {
     setSelectedRenewalExtraSquads(null);
-  }, [selectedTariff?.id, selectedTariffPeriod?.days, customDays, customTrafficGb, useCustomDays, useCustomTraffic]);
+  }, [
+    selectedTariff?.id,
+    selectedTariffPeriod?.days,
+    customDays,
+    customTrafficGb,
+    useCustomDays,
+    useCustomTraffic,
+  ]);
 
   // Classic mode helpers
   const toggleServer = (uuid: string) => {
@@ -1492,12 +1499,14 @@ export default function SubscriptionPurchase() {
                             isSameTariffRenewal && tariffRenewalPreview
                               ? tariffRenewalPreview.original_total_kopeks
                               : promoPeriod.original
-                            ? promoPeriod.original + trafficPrice
-                            : null;
+                                ? promoPeriod.original + trafficPrice
+                                : null;
                           const renewalExtraItems = tariffRenewalPreview?.extra_squads ?? [];
                           const effectiveSelectedExtraSquads =
                             selectedRenewalExtraSquads ??
-                            renewalExtraItems.filter((item) => item.enabled).map((item) => item.uuid);
+                            renewalExtraItems
+                              .filter((item) => item.enabled)
+                              .map((item) => item.uuid);
                           const allExtraEnabled =
                             renewalExtraItems.length > 0 &&
                             renewalExtraItems.every((item) =>
@@ -1704,7 +1713,9 @@ export default function SubscriptionPurchase() {
 
                               <button
                                 onClick={() => tariffPurchaseMutation.mutate()}
-                                disabled={tariffPurchaseMutation.isPending || tariffRenewalPreviewLoading}
+                                disabled={
+                                  tariffPurchaseMutation.isPending || tariffRenewalPreviewLoading
+                                }
                                 className="btn-primary w-full py-3"
                               >
                                 {tariffPurchaseMutation.isPending ? (
