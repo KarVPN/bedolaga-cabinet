@@ -91,9 +91,9 @@ export const DialogContent = forwardRef<HTMLDivElement, DialogContentProps>(
               <DialogPrimitive.Content
                 ref={ref}
                 className={cn(
-                  'fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2',
-                  'max-h-[85vh] w-full max-w-lg',
-                  'grid gap-4 overflow-auto',
+                  'fixed left-1/2 top-1/2 z-50',
+                  'max-h-[calc(100dvh_-_2rem)] w-[calc(100%_-_2rem)] max-w-lg',
+                  'grid min-w-0 grid-cols-1 gap-4 overflow-y-auto overscroll-contain break-words',
                   'rounded-linear-lg border border-dark-700/50 bg-dark-900/95 backdrop-blur-linear',
                   'p-6 shadow-linear-lg',
                   'focus:outline-none',
@@ -103,6 +103,9 @@ export const DialogContent = forwardRef<HTMLDivElement, DialogContentProps>(
                 {...props}
               >
                 <motion.div
+                  // Motion owns transform: keep centring in its transform chain
+                  // so the scale animation cannot overwrite CSS translation.
+                  style={{ x: '-50%', y: '-50%' }}
                   variants={scale}
                   initial="initial"
                   animate="animate"

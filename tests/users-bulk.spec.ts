@@ -25,6 +25,7 @@ async function setup(
   page: Page,
   restored = false,
   mode: 'complete' | 'batches' | 'cancel' | 'uncertain' = 'complete',
+  previewOverrides: Record<string, unknown> = {},
 ) {
   page.on('pageerror', (error) => console.error('PAGE ERROR', error));
   const previews: Record<string, unknown>[] = [];
@@ -64,7 +65,7 @@ async function setup(
     } else if (path.endsWith('/user-bulk-operations')) data = restored ? [current] : [];
     else if (path.endsWith('/preview')) {
       previews.push(req.postDataJSON());
-      current = operation();
+      current = operation(previewOverrides);
       data = current;
     } else if (path.endsWith('/cancel')) {
       current = operation({ state: 'running', cancel_requested: true });
@@ -234,3 +235,101 @@ test('controls fit the mobile viewport', async ({ page }) => {
   );
   await page.screenshot({ path: 'test-results/users-bulk-mobile.png', fullPage: true });
 });
+
+async function expectDialogInsideViewport(page: Page) {
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toHaveCSS('opacity', '1');
+  const viewport = page.viewportSize()!;
+  await expect
+    .poll(async () => {
+      const box = await dialog.boundingBox();
+      return box ? Math.abs(box.x + box.width / 2 - viewport.width / 2) : Infinity;
+    })
+    .toBeLessThanOrEqual(1);
+  await expect
+    .poll(async () => {
+      const box = await dialog.boundingBox();
+      return box ? Math.abs(box.y + box.height / 2 - viewport.height / 2) : Infinity;
+    })
+    .toBeLessThanOrEqual(1);
+  const box = (await dialog.boundingBox())!;
+  expect(box.x).toBeGreaterThanOrEqual(15);
+  expect(box.y).toBeGreaterThanOrEqual(15);
+  expect(box.x + box.width).toBeLessThanOrEqual(viewport.width - 15);
+  expect(box.y + box.height).toBeLessThanOrEqual(viewport.height - 15);
+  expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  const close = dialog.getByRole('button', { name: 'Close', exact: true });
+  await close.scrollIntoViewIfNeeded();
+  await expect(close).toBeInViewport();
+  return dialog;
+}
+
+for (const viewport of [
+  { width: 320, height: 568 },
+  { width: 390, height: 480 },
+  { width: 438, height: 703 },
+  { width: 844, height: 390 },
+  { width: 1280, height: 1000 },
+]) {
+  test(`confirmation dialog stays centred and scrolls at ${viewport.width}x${viewport.height}`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize(viewport);
+    const state = await setup(page, false, 'complete', {
+      action: 'extend_subscription',
+      params: { days: 10, traffic_gb: null },
+      total: 99,
+      subscriptions: 104,
+      affected_users: 65,
+      skipped_users: 34,
+      items: { pending: 70, skipped: 34 },
+      skip_reasons: [
+        { reason: 'Нет подходящей подписки', count: 20 },
+        { reason: 'Нет закреплённой связи подписки с панелью', count: 14 },
+      ],
+    });
+    await page.getByRole('button', { name: /Выбрать всех по текущим фильтрам/ }).click();
+    await page.getByLabel('Массовое действие').selectOption('extend_subscription');
+    await page.getByLabel('Количество дней').fill('10');
+    await page.getByRole('button', { name: 'Предпросмотр и подтверждение' }).click();
+    const dialog = await expectDialogInsideViewport(page);
+    await expect(dialog).toContainText('99 уникальных пользователей, 104 подписок');
+    const confirm = dialog.getByRole('button', { name: 'Подтвердить и запустить' });
+    await confirm.scrollIntoViewIfNeeded();
+    await expect(confirm).toBeInViewport();
+    if (viewport.height <= 568) {
+      expect(await dialog.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(
+        true,
+      );
+    }
+    expect(state.runs()).toBe(0);
+    // Resizing/rotating an already open Telegram webview must keep it inside.
+    await page.setViewportSize({ width: 568, height: 320 });
+    await expectDialogInsideViewport(page);
+    await page.setViewportSize(viewport);
+    await expectDialogInsideViewport(page);
+    await dialog.evaluate((element) => {
+      element.scrollTop = 0;
+    });
+    await page.screenshot({ path: testInfo.outputPath('confirmation.png') });
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await page.getByRole('button', { name: 'Предпросмотр и подтверждение' }).click();
+    await expectDialogInsideViewport(page);
+  });
+
+  test(`cancellation dialog stays centred at ${viewport.width}x${viewport.height}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    await setup(page, true);
+    await page.getByRole('button', { name: 'Отменить оставшихся', exact: true }).click();
+    const dialog = await expectDialogInsideViewport(page);
+    await expect(dialog).toContainText('Уже выполненные изменения сохранятся');
+    const confirm = dialog.getByRole('button', { name: 'Отменить оставшуюся обработку' });
+    await confirm.scrollIntoViewIfNeeded();
+    await expect(confirm).toBeInViewport();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+  });
+}
