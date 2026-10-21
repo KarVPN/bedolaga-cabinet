@@ -5124,7 +5124,12 @@
         "buttonApplied_few": "Фильтры: выбрано {{count}}",
         "buttonApplied_many": "Фильтры: выбрано {{count}}",
         "reset": "Сбросить",
-        "remove": "Убрать фильтр «{{name}}»"
+        "remove": "Убрать фильтр «{{name}}»",
+        "allStatuses": "Все статусы",
+        "byDate": "По дате",
+        "byBalance": "По балансу",
+        "byActivity": "По активности",
+        "bySpent": "По расходам"
       },
       "actions": {
         "block": "Заблокировать",
@@ -5919,7 +5924,12 @@
         "userNotFound": "Пользователь не найден",
         "trialBlockedBySubscription": "Триал всё равно закрыт: у человека есть другая подписка. Сначала удалите её."
       },
-      "moreTariffs": "ещё {{count}}"
+      "moreTariffs": "ещё {{count}}",
+      "searchEmail": "Поиск по email...",
+      "noPurchases": "Нет покупок",
+      "pagination": {
+        "showing": "Показано {{from}}-{{to}} из {{total}}"
+      }
     },
     "promoOffers": {
       "title": "Промопредложения",

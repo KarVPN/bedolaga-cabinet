@@ -230,9 +230,13 @@ test('uncertain outcomes show review details and are not automatically retried',
 
 test('controls fit the mobile viewport', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => localStorage.setItem('cabinet_language', 'ru'));
   await setup(page, true);
   await expect(page.getByRole('button', { name: 'Продолжить', exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'К списку пользователей' })).toHaveCount(1);
+  await expect(page.getByPlaceholder('Поиск по email...')).toBeVisible();
+  await expect(page.locator('body')).not.toContainText('admin.users.');
+  await expect(page.getByText('Показано 1-20 из 25', { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );

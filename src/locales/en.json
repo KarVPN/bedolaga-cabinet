@@ -4686,7 +4686,12 @@
         "buttonApplied_one": "Filters: {{count}} applied",
         "buttonApplied_other": "Filters: {{count}} applied",
         "reset": "Reset",
-        "remove": "Remove filter “{{name}}”"
+        "remove": "Remove filter “{{name}}”",
+        "allStatuses": "All statuses",
+        "byDate": "By date",
+        "byBalance": "By balance",
+        "byActivity": "By activity",
+        "bySpent": "By spending"
       },
       "actions": {
         "block": "Block",
@@ -5464,7 +5469,12 @@
         "userNotFound": "User not found",
         "trialBlockedBySubscription": "The trial is still unavailable: this person has another subscription. Remove it first."
       },
-      "moreTariffs": "{{count}} more"
+      "moreTariffs": "{{count}} more",
+      "searchEmail": "Search by email...",
+      "noPurchases": "No purchases",
+      "pagination": {
+        "showing": "Showing {{from}}-{{to}} of {{total}}"
+      }
     },
     "promoOffers": {
       "title": "Promo Offers",
