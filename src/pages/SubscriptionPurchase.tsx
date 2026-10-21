@@ -114,7 +114,7 @@ export default function SubscriptionPurchase() {
     );
   }
 
-  if (optionsError || (!purchaseOptions && !optionsLoading)) {
+  if (optionsError || !purchaseOptions) {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-bold text-dark-50 sm:text-3xl">{t('subscription.extend')}</h1>

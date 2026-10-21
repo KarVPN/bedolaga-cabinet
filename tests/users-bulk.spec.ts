@@ -30,6 +30,10 @@ async function setup(
   page.on('pageerror', (error) => console.error('PAGE ERROR', error));
   const previews: Record<string, unknown>[] = [];
   let runs = 0;
+  let releaseCancelledRun: (() => void) | undefined;
+  const cancelGate = new Promise<void>((resolve) => {
+    releaseCancelledRun = resolve;
+  });
   let current = operation(restored ? { state: 'paused', processed: 12, success: 11 } : {});
   await page.route('**/api/**', async (route) => {
     const req = route.request();
@@ -70,6 +74,7 @@ async function setup(
     } else if (path.endsWith('/cancel')) {
       current = operation({ state: 'running', cancel_requested: true });
       data = current;
+      releaseCancelledRun?.();
     } else if (path.endsWith('/errors')) {
       data = [
         {
@@ -82,7 +87,8 @@ async function setup(
     } else if (path.endsWith('/run')) {
       runs++;
       current = operation({ state: 'running' });
-      await new Promise((resolve) => setTimeout(resolve, mode === 'cancel' ? 1200 : 250));
+      if (mode === 'cancel') await cancelGate;
+      else await new Promise((resolve) => setTimeout(resolve, 250));
       current = operation({
         state: 'completed',
         processed: 25,
@@ -226,6 +232,7 @@ test('controls fit the mobile viewport', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await setup(page, true);
   await expect(page.getByRole('button', { name: 'Продолжить', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'К списку пользователей' })).toHaveCount(1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );

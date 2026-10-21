@@ -34,10 +34,7 @@ function StatCard({ title, value, subtitle, color }: StatCardProps) {
   };
 
   return (
-    <div className={`rounded-xl border p-4 ${colors[color]}`}>
-      <Link to="/admin/users" className="mb-4 inline-block text-accent-400">
-        К списку пользователей
-      </Link>
+    <div className={`min-w-0 break-words rounded-xl border p-4 ${colors[color]}`}>
       <div className="mb-1 text-2xl font-bold">{value}</div>
       <div className="text-sm opacity-80">{title}</div>
       {subtitle && <div className="mt-1 text-xs opacity-60">{subtitle}</div>}
@@ -276,20 +273,24 @@ export default function AdminUserOperations() {
   const currentPage = Math.floor(offset / limit) + 1;
 
   return (
-    <div className="animate-fade-in">
+    <div className="min-w-0 animate-fade-in">
+      <Link to="/admin/users" className="mb-4 inline-block text-accent-400">
+        К списку пользователей
+      </Link>
+
       {/* Header */}
-      <div className="mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      <div className="mb-6 flex items-start justify-between gap-2">
+        <div className="flex min-w-0 items-start gap-3">
           {/* Show back button only on web, not in Telegram Mini App */}
           {!capabilities.hasBackButton && (
             <button
               onClick={() => navigate('/admin')}
-              className="flex h-10 w-10 items-center justify-center rounded-xl border border-dark-700 bg-dark-800 transition-colors hover:border-dark-600"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-dark-700 bg-dark-800 transition-colors hover:border-dark-600"
             >
               <BackIcon />
             </button>
           )}
-          <div>
+          <div className="min-w-0 break-words">
             <h1 className="text-xl font-bold text-dark-100">{t('admin.nav.userOperations')}</h1>
             <p className="text-sm text-dark-400">{t('admin.users.subtitle')}</p>
           </div>
@@ -299,7 +300,7 @@ export default function AdminUserOperations() {
             loadUsers();
             loadStats();
           }}
-          className="rounded-lg p-2 transition-colors hover:bg-dark-700"
+          className="shrink-0 rounded-lg p-2 transition-colors hover:bg-dark-700"
         >
           <RefreshIcon className={loading ? 'animate-spin' : ''} />
         </button>

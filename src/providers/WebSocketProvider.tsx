@@ -96,7 +96,7 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
         try {
           const parsed = JSON.parse(event.data);
           if (!parsed || typeof parsed !== 'object' || typeof parsed.type !== 'string') {
-            if (isDev) console.warn('[WS] Invalid message format:', parsed);
+            if (isDev) console.warn('[WS] Invalid message format');
             return;
           }
           const message = parsed as WSMessage;
