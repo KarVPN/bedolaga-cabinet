@@ -37,6 +37,41 @@ interface Props {
   filterKey: string;
 }
 
+function notificationAction(op: BulkOperation) {
+  if (op.action === 'add_traffic') return `добавлен трафик: ${op.params.traffic_gb} ГБ`;
+  const days = op.params.days ?? 0;
+  const unit =
+    days % 100 >= 11 && days % 100 <= 14
+      ? 'дней'
+      : days % 10 === 1
+        ? 'день'
+        : [2, 3, 4].includes(days % 10)
+          ? 'дня'
+          : 'дней';
+  return `${op.action === 'deduct_days' ? 'сокращена' : 'продлена'} на ${days} ${unit}`;
+}
+function NotificationPreview({ operation }: { operation: BulkOperation }) {
+  return (
+    <div
+      className="space-y-2 rounded-lg border border-dark-600 p-3 text-sm"
+      aria-label="Пример уведомления"
+    >
+      <p className="font-medium">Пример уведомления для одной подписки</p>
+      <p>
+        {operation.action === 'add_traffic' ? 'Для вашей подписки ' : 'Ваша подписка была '}
+        <code>{notificationAction(operation)}</code>.
+      </p>
+      {operation.params.notification_message && (
+        <p className="whitespace-pre-wrap break-words">{operation.params.notification_message}</p>
+      )}
+      <p className="text-xs text-dark-400">
+        Одно сообщение на пользователя после обработки его подписок. При нескольких подписках укажем
+        количество успешно изменённых. Отправка — только в Telegram.
+      </p>
+    </div>
+  );
+}
+
 export function UserBulkActions({
   selected,
   filters,
@@ -47,6 +82,10 @@ export function UserBulkActions({
   filterKey,
 }: Props) {
   const allowed = usePermissionStore((state) => state.hasPermission('bulk_actions:execute'));
+  const canNotify = usePermissionStore((state) => state.hasPermission('users:send_message'));
+  const [notifyUsers, setNotifyUsers] = useState(false);
+  const [notificationMessage, setNotificationMessage] = useState('');
+  const [errorKind, setErrorKind] = useState<'subscription' | 'notification'>('subscription');
   const [action, setAction] = useState<BulkAction>('add_traffic');
   const [traffic, setTraffic] = useState(50);
   const [days, setDays] = useState('7');
@@ -132,6 +171,14 @@ export function UserBulkActions({
     try {
       const input = {
         request_key: crypto.randomUUID(),
+        ...(notifyUsers && canNotify
+          ? {
+              notify_users: true,
+              ...(notificationMessage.trim()
+                ? { notification_message: notificationMessage.trim() }
+                : {}),
+            }
+          : {}),
         action,
         ...(action === 'add_traffic' ? { traffic_gb: traffic } : { days: Number(days) }),
         ...(all
@@ -142,6 +189,12 @@ export function UserBulkActions({
       };
       const next = await userBulkApi.preview(input);
       if (!mounted.current || currentFilter.current !== requestedFilter) return;
+      if (notifyUsers && canNotify && next.params.notify_users !== true) {
+        setError(
+          'Сначала обновите серверную часть: она ещё не поддерживает уведомления массовых операций.',
+        );
+        return;
+      }
       if (all) onSelectAll(next);
       else setPreview(next);
     } catch (err) {
@@ -170,7 +223,9 @@ export function UserBulkActions({
         // Uncertain outcomes require an explicit operator decision before more work.
         if (
           next.uncertain > current.uncertain ||
-          (next.items.uncertain ?? 0) > (current.items.uncertain ?? 0)
+          (next.items.uncertain ?? 0) > (current.items.uncertain ?? 0) ||
+          (next.notifications?.uncertain ?? 0) > (current.notifications?.uncertain ?? 0) ||
+          (next.notifications?.limited ?? 0) > (current.notifications?.limited ?? 0)
         )
           break;
         current = next;
@@ -204,10 +259,16 @@ export function UserBulkActions({
       setError(getApiErrorMessage(err, 'Не удалось отменить оставшихся'));
     }
   }
-  async function showErrors(offset = 0) {
+  async function showErrors(offset = 0, kind = errorKind) {
     if (!operation) return;
     try {
-      setErrors(await userBulkApi.errors(operation.id, offset));
+      setErrors(
+        await (kind === 'notification' ? userBulkApi.notificationErrors : userBulkApi.errors)(
+          operation.id,
+          offset,
+        ),
+      );
+      setErrorKind(kind);
       setErrorOffset(offset);
     } catch (err) {
       setError(getApiErrorMessage(err, 'Не удалось получить ошибки'));
@@ -256,7 +317,11 @@ export function UserBulkActions({
             {!finished(operation) && (
               <button
                 className={button}
-                disabled={busy || operation.cancel_requested || !(operation.items.pending ?? 0)}
+                disabled={
+                  busy ||
+                  operation.cancel_requested ||
+                  !((operation.items.pending ?? 0) + (operation.notifications?.pending ?? 0))
+                }
                 onClick={() => execute(operation)}
               >
                 Продолжить
@@ -284,16 +349,41 @@ export function UserBulkActions({
             >
               Обновить состояние
             </button>
-            <button className={button} onClick={() => showErrors()}>
+            <button className={button} onClick={() => showErrors(0, 'subscription')}>
               Показать ошибки
             </button>
+            {operation.params.notify_users && (
+              <button className={button} onClick={() => showErrors(0, 'notification')}>
+                Ошибки и пропуски уведомлений
+              </button>
+            )}
           </div>
+          {operation.params.notify_users && (
+            <div className="space-y-2 text-sm" aria-label="Результат уведомлений">
+              <p>
+                Уведомления: отправлено {operation.notifications?.sent ?? 0} · Ожидают{' '}
+                {operation.notifications?.pending ?? 0} · Отправляются{' '}
+                {operation.notifications?.sending ?? 0} · Ошибки{' '}
+                {(operation.notifications?.failed ?? 0) + (operation.notifications?.limited ?? 0)} ·
+                Доставка не подтверждена {operation.notifications?.uncertain ?? 0} · Пропущено{' '}
+                {operation.notifications?.skipped ?? 0}
+              </p>
+              <p className="text-xs text-dark-400">
+                Ошибка доставки не отменяет изменение подписки. Неподтверждённые сообщения
+                автоматически не повторяются.
+              </p>
+              <NotificationPreview operation={operation} />
+            </div>
+          )}
           {errors && (
             <div className="space-y-2 text-sm">
               {errors.length === 0 && <p>На этой странице ошибок нет.</p>}
               {errors.map((item) => (
                 <p key={`${item.user_id}-${item.subscription_id}`}>
-                  Пользователь #{item.user_id}, подписка #{item.subscription_id}: {item.message}
+                  {errorKind === 'notification'
+                    ? `Уведомление пользователю #${item.user_id}`
+                    : `Пользователь #${item.user_id}, подписка #${item.subscription_id}`}
+                  : {item.message}
                 </p>
               ))}
               <div className="flex gap-2">
@@ -415,6 +505,37 @@ export function UserBulkActions({
             </button>
           </div>
         )}
+        {selectedCount > 0 && canNotify && (
+          <div className="space-y-3 border-t border-dark-700 pt-3">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={notifyUsers}
+                disabled={busy || preparing}
+                onChange={(event) => setNotifyUsers(event.target.checked)}
+              />
+              Отправить уведомление в Telegram
+            </label>
+            {notifyUsers && (
+              <label className="block text-sm">
+                Дополнительный текст сообщения
+                <textarea
+                  className="mt-2 block w-full min-w-0 rounded-lg bg-dark-800 p-3"
+                  rows={3}
+                  maxLength={2000}
+                  value={notificationMessage}
+                  disabled={busy || preparing}
+                  onChange={(event) => setNotificationMessage(event.target.value)}
+                  placeholder="Компенсация за простой и неработоспособность сервиса с 11 по 14 октября"
+                />
+                <span className="mt-1 block text-xs text-dark-400">
+                  {notificationMessage.length}/2000. Действие и параметры добавятся автоматически.
+                  Текст отправляется без HTML-разметки.
+                </span>
+              </label>
+            )}
+          </div>
+        )}
       </section>
       <Dialog
         open={!!preview}
@@ -430,6 +551,7 @@ export function UserBulkActions({
           {preview && (
             <>
               <p className="font-semibold">{describe(preview)}</p>
+              {preview.params.notify_users && <NotificationPreview operation={preview} />}
               <p>
                 В выборке: {preview.total} уникальных пользователей, {preview.subscriptions}{' '}
                 подписок.
@@ -473,7 +595,8 @@ export function UserBulkActions({
             Обработано {operation?.processed ?? 0} из {operation?.total ?? 0} пользователей.
             Осталось незавершённых пользователей:{' '}
             {(operation?.total ?? 0) - (operation?.processed ?? 0)}. Уже выполненные изменения
-            сохранятся. Отправленный запрос к панели завершится отдельно.
+            сохранятся. Ожидающие уведомления будут отменены. Уже отправленные запросы к панели или
+            Telegram завершатся отдельно.
           </DialogDescription>
           <button className={button} onClick={cancel}>
             Отменить оставшуюся обработку
