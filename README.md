@@ -23,6 +23,56 @@ Frontend — это статические файлы (HTML, JS, CSS). Обра�
 
 ## Установка
 
+### KarVPN: сборка в GitHub Actions и готовый образ для VPS
+
+Workflow **Docker Build** (`.github/workflows/docker.yml`) собирает образ
+`linux/amd64` на стандартном GitHub runner Ubuntu 24.04. Mac и ресурсы VPS
+для сборки не используются. Запуски: push в `main`, теги `v*`, pull request
+и **Actions → Docker Build → Run workflow**. В PR образ проверяется без
+публикации; остальные запуски публикуют его в
+`ghcr.io/karvpn/bedolaga-cabinet`. Пакет оставляем **приватным**.
+
+Перед публикацией runner запускает контейнер, проверяет страницу кабинета,
+доступность nginx и отсутствие `.env`/ключевых файлов в каталоге статики.
+В summary успешного запуска появляется точная ссылка
+`ghcr.io/karvpn/bedolaga-cabinet@sha256:…`. Скопируйте её в
+`bedolaga_cabinet_image` inventory репозитория `vpn-infrastructure`.
+Теги `sha-<полный commit SHA>`, `main` и релизные теги удобны для поиска;
+для деплоя используется digest, который однозначно определяет содержимое образа.
+
+Публичные настройки сборки задаются в **Settings → Secrets and variables →
+Actions → Variables**. Значения по умолчанию для этого форка:
+
+| Repository variable | Значение по умолчанию |
+| --- | --- |
+| `VITE_API_URL` | `/api` |
+| `VITE_TELEGRAM_BOT_USERNAME` | `KarVPNBot` |
+| `VITE_APP_NAME` | `KarVPN` |
+| `VITE_APP_LOGO` | `K` |
+
+Они доступны посетителю в JavaScript. Токен бота, JWT, пароли баз, платёжные
+секреты и серверные `.env` в сборку **не передаются**. Dockerfile копирует
+только перечисленные исходники и конфигурацию сборки; `.dockerignore` также
+исключает `.env*`, ключи и локальные файлы авторизации. Изменение этих четырёх
+публичных настроек требует новой сборки. Ansible сверяет их с labels образа
+до замены Compose.
+
+Публикация использует встроенный `GITHUB_TOKEN` с `packages: write` после
+проверки контейнера. Если GHCR отвечает отказом, проверьте связь пакета с этим
+репозиторием и **Package settings → Manage Actions access**. Персональный токен
+для сборки/публикации не нужен. Release Please явно запускает Docker Build
+для созданного релизного тега: обычный push-триггер не срабатывает для тегов,
+созданных встроенным `GITHUB_TOKEN`.
+
+Для скачивания приватного образа оператор один раз создаёт **Personal access
+token (classic)** с `read:packages`, от своего пользователя с доступом к пакету
+KarVPN. Если организация требует SSO, авторизуйте токен для неё. В игнорируемый
+локальный `.env` репозитория `vpn-infrastructure` добавьте `GHCR_USERNAME`
+(личный GitHub login) и `GHCR_READ_TOKEN`. Не добавляйте их в этот репозиторий,
+`VITE_*`, Compose или параметры сборки. Ansible использует временный Docker
+config на VPS, скрывает вход из логов и удаляет credentials после скачивания,
+в том числе при ошибке. Полный порядок — в README `vpn-infrastructure`.
+
 ### Шаг 1. Настройка backend бота
 
 В `.env` файле бота добавьте:

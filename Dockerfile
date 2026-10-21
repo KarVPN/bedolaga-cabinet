@@ -1,16 +1,19 @@
 # Stage 1: Build the React application
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
 # Copy package files
-COPY package.json package-lock.json* ./
+COPY package.json package-lock.json ./
 
 # Install dependencies
-RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
+RUN HUSKY=0 npm ci
 
 # Copy source code
-COPY . .
+# Only build inputs: no .env, Git credentials, workflows or server configuration.
+COPY index.html vite.config.ts tsconfig*.json postcss.config.js tailwind.config.* ./
+COPY src ./src
+COPY public ./public
 
 # Build arguments for environment variables
 ARG VITE_API_URL=/api
@@ -39,4 +42,4 @@ EXPOSE 80
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:80/ || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:80/ || exit 1

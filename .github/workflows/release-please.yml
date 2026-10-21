@@ -8,11 +8,21 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write
 
 jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
       - uses: googleapis/release-please-action@v4
+        id: release
         with:
           release-type: node
+
+      # Tags created with GITHUB_TOKEN do not trigger other push workflows.
+      - name: Build the released Docker image
+        if: steps.release.outputs.release_created == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag_name }}
+        run: gh workflow run docker.yml --repo "$GITHUB_REPOSITORY" --ref "$RELEASE_TAG"
