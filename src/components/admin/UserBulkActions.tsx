@@ -424,7 +424,7 @@ export function UserBulkActions({
         }}
       >
         <DialogContent>
-          <DialogTitle>Подтвердить массовое действие</DialogTitle>
+          <DialogTitle className="pr-8">Подтвердить массовое действие</DialogTitle>
           <DialogDescription>
             Состав целей и параметры зафиксированы. Уже выполненные изменения сохранятся.
           </DialogDescription>
@@ -469,7 +469,7 @@ export function UserBulkActions({
       </Dialog>
       <Dialog open={cancelDialog} onOpenChange={setCancelDialog}>
         <DialogContent>
-          <DialogTitle>Отменить оставшихся</DialogTitle>
+          <DialogTitle className="pr-8">Отменить оставшихся</DialogTitle>
           <DialogDescription>
             Обработано {operation?.processed ?? 0} из {operation?.total ?? 0} пользователей.
             Осталось незавершённых пользователей:{' '}
