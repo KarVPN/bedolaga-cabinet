@@ -15,7 +15,15 @@ export type BulkAction = 'add_traffic' | 'extend_subscription' | 'deduct_days';
 export interface BulkOperation {
   id: string;
   action: BulkAction;
-  params: { traffic_gb: number | null; days: number | null };
+  params: {
+    traffic_gb: number | null;
+    days: number | null;
+    notify_users?: boolean;
+    notification_message?: string | null;
+  };
+  notifications?: Partial<
+    Record<'pending' | 'sending' | 'sent' | 'failed' | 'limited' | 'uncertain' | 'skipped', number>
+  >;
   state: 'preview' | 'running' | 'paused' | 'completed' | 'cancelled' | 'needs_review';
   total: number;
   processed: number;
@@ -41,6 +49,8 @@ export interface BulkPreview {
   filters?: BulkFilters;
   selection_id?: string;
   target_filters?: BulkFilters;
+  notify_users?: boolean;
+  notification_message?: string;
 }
 export interface BulkError {
   user_id: number;
@@ -60,6 +70,8 @@ export const userBulkApi = {
     (await apiClient.post(`${path}/${id}/cancel`)).data,
   errors: async (id: string, offset = 0): Promise<BulkError[]> =>
     (await apiClient.get(`${path}/${id}/errors`, { params: { offset } })).data,
+  notificationErrors: async (id: string, offset = 0): Promise<BulkError[]> =>
+    (await apiClient.get(`${path}/${id}/notification-errors`, { params: { offset } })).data,
   watch: async (id: string, signal: AbortSignal, update: (operation: BulkOperation) => void) => {
     // Refresh through the normal client before opening the authenticated SSE stream.
     await userBulkApi.get(id);
