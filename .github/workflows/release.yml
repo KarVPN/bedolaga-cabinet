@@ -1,85 +1,91 @@
-name: Release
+name: KarVPN Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: karvpn-release
+  cancel-in-progress: false
 
 jobs:
-  lint:
-    uses: ./.github/workflows/lint.yml
-
-  create-release:
-    needs: lint
-    runs-on: ubuntu-latest
-
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      publish: ${{ steps.release.outputs.publish }}
+      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+      commit: ${{ steps.release.outputs.commit }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build application
-        run: npm run build
+          persist-credentials: false
+      - name: Find a reviewed and merged release PR awaiting publication
+        id: release
         env:
-          VITE_API_URL: /api
-          VITE_TELEGRAM_BOT_USERNAME:
-          VITE_APP_NAME: Bedolaga Cabinet
-          VITE_APP_LOGO: V
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/karvpn_release_pr.py pending
 
-      - name: Create dist archive
-        run: |
-          cd dist
-          tar -czf ../bedolaga-cabinet-${{ github.ref_name }}.tar.gz .
-          cd ..
-          zip -r bedolaga-cabinet-${{ github.ref_name }}.zip dist/
+  lint:
+    needs: prepare
+    if: needs.prepare.outputs.publish == 'true'
+    uses: ./.github/workflows/lint.yml
 
-      - name: Generate changelog
-        id: changelog
-        run: |
-          # Get previous tag
-          PREV_TAG=$(git describe --tags --abbrev=0 ${{ github.ref_name }}^ 2>/dev/null || echo "")
+  image:
+    needs: [prepare, lint]
+    if: needs.prepare.outputs.publish == 'true'
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+    uses: ./.github/workflows/docker.yml
+    with:
+      release_tag: ${{ needs.prepare.outputs.tag }}
+      source_ref: ${{ needs.prepare.outputs.commit }}
 
-          if [ -z "$PREV_TAG" ]; then
-            echo "changelog=First release" >> $GITHUB_OUTPUT
-          else
-            CHANGELOG=$(git log ${PREV_TAG}..${{ github.ref_name }} --pretty=format:"- %s (%h)" --no-merges)
-            echo "changelog<<EOF" >> $GITHUB_OUTPUT
-            echo "$CHANGELOG" >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+  release:
+    needs: [prepare, image]
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
         with:
-          body: |
-            ## Changes
+          ref: ${{ needs.prepare.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Publish the reviewed release after the image has passed its checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          KARVPN_RELEASE_SHA: ${{ needs.prepare.outputs.commit }}
+          RELEASE_IMAGE: ${{ needs.image.outputs.image }}
+        run: |
+          python3 scripts/karvpn_release.py notes --publish --tag "$RELEASE_TAG" \
+            --image "$RELEASE_IMAGE" --output "$RUNNER_TEMP/karvpn-release-notes.md"
+          gh release create "$RELEASE_TAG" --target "$KARVPN_RELEASE_SHA" \
+            --title "$RELEASE_TAG" --notes-file "$RUNNER_TEMP/karvpn-release-notes.md" --latest
 
-            ${{ steps.changelog.outputs.changelog }}
-
-            ## Docker Image
-
-            ```bash
-            docker pull ghcr.io/${{ github.repository }}:${{ github.ref_name }}
-            ```
-
-            ## Installation
-
-            See [README.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/README.md) for installation instructions.
-          files: |
-            bedolaga-cabinet-${{ github.ref_name }}.tar.gz
-            bedolaga-cabinet-${{ github.ref_name }}.zip
-          draft: false
-          prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'rc') }}
+  release-pr:
+    needs: [prepare, release]
+    if: always() && needs.prepare.result == 'success' && (needs.prepare.outputs.publish == 'false' || needs.release.result == 'success')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Create or update the next KarVPN release PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/karvpn_release_pr.py propose

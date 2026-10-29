@@ -60,3 +60,7 @@ DESIGN.json
 
 # Локальные архивы исходников — не для репозитория
 *.zip
+
+# Python release automation tests
+__pycache__/
+*.py[cod]
