@@ -1,12 +1,5 @@
 # Changelog
 
-## [1.80.1-karvpn.2](https://github.com/KarVPN/bedolaga-cabinet/compare/v1.80.1-karvpn.1...v1.80.1-karvpn.2) (2026-10-29)
-
-
-### Features
-
-* добавить сообщения пользователям после массовых действий ([30f8d6f](https://github.com/KarVPN/bedolaga-cabinet/commit/30f8d6f00a95dd03fc630a327d045d20d25d0c00))
-
 ## [1.80.1-karvpn.1](https://github.com/KarVPN/bedolaga-cabinet/compare/v1.80.1...v1.80.1-karvpn.1) (2026-10-21)
 
 

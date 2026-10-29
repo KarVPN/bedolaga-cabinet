@@ -3,16 +3,27 @@ name: Docker Build
 on:
   push:
     branches: [main]
-    tags: ['v*']
   pull_request:
     branches: [main]
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      release_tag:
+        type: string
+        default: ''
+      source_ref:
+        type: string
+        default: ''
+    outputs:
+      image:
+        description: Immutable reference of the tested image.
+        value: ${{ jobs.build-and-push.outputs.image }}
 
 permissions:
   contents: read
 
 concurrency:
-  group: cabinet-image-${{ github.ref }}-${{ github.event_name }}
+  group: cabinet-image-${{ github.ref }}-${{ github.event_name }}-${{ inputs.release_tag || 'branch' }}
   cancel-in-progress: true
 
 # These settings are public: they are compiled into the browser's JavaScript.
@@ -26,9 +37,13 @@ env:
 jobs:
   lint:
     uses: ./.github/workflows/lint.yml
+    with:
+      source_ref: ${{ inputs.source_ref || github.sha }}
 
   build-and-push:
     needs: lint
+    outputs:
+      image: ${{ steps.published.outputs.image }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -41,6 +56,13 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+          ref: ${{ inputs.source_ref || github.sha }}
+
+      - name: Validate the reviewed KarVPN version
+        id: version
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: python3 scripts/karvpn_release.py metadata --tag "$RELEASE_TAG"
 
       - name: Validate public build settings and resolve image name
         id: image
@@ -68,12 +90,13 @@ jobs:
         with:
           images: ${{ steps.image.outputs.name }}
           tags: |
-            type=ref,event=tag
+            type=raw,value=${{ inputs.release_tag || 'release-not-requested' }},enable=${{ inputs.release_tag != '' }}
             type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=sha,format=long
-            type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=sha-${{ inputs.source_ref || github.sha }}
+            type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' && inputs.release_tag == '' }}
           labels: |
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+            org.opencontainers.image.revision=${{ inputs.source_ref || github.sha }}
             io.karvpn.cabinet.api-url=${{ env.VITE_API_URL }}
             io.karvpn.cabinet.telegram-bot-username=${{ env.VITE_TELEGRAM_BOT_USERNAME }}
             io.karvpn.cabinet.app-name=${{ env.VITE_APP_NAME }}
@@ -125,20 +148,23 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish the tested image and deployment reference
+        id: published
         if: github.event_name != 'pull_request'
         env:
           IMAGE_NAME: ${{ steps.image.outputs.name }}
           IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+          IMAGE_COMMIT: ${{ inputs.source_ref || github.sha }}
         shell: bash
         run: |
           while IFS= read -r tag; do
             docker push "$tag"
           done <<< "$IMAGE_TAGS"
-          image=$(docker image inspect "$IMAGE_NAME:sha-$GITHUB_SHA" --format '{{index .RepoDigests 0}}')
+          image=$(docker image inspect "$IMAGE_NAME:sha-$IMAGE_COMMIT" --format '{{index .RepoDigests 0}}')
+          echo "image=$image" >> "$GITHUB_OUTPUT"
           {
             echo '## Cabinet image ready'
             echo
-            echo "Platform: linux/amd64. Commit: $GITHUB_SHA."
+            echo "Platform: linux/amd64. Commit: $IMAGE_COMMIT."
             echo
             echo 'Use this immutable reference in Ansible:'
             echo '```yaml'
@@ -153,7 +179,7 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
         with:
-          image-ref: ${{ steps.image.outputs.name }}:sha-${{ github.sha }}
+          image-ref: ${{ steps.published.outputs.image }}
           format: sarif
           output: trivy-results.sarif
           severity: HIGH,CRITICAL

@@ -2,6 +2,11 @@ name: Lint & Format
 
 on:
   workflow_call:
+    inputs:
+      source_ref:
+        description: Reviewed commit to validate.
+        type: string
+        default: ''
 
 jobs:
   lint:
@@ -9,6 +14,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref || github.sha }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
