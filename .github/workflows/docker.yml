@@ -37,6 +37,8 @@ env:
 jobs:
   lint:
     uses: ./.github/workflows/lint.yml
+    with:
+      source_ref: ${{ inputs.source_ref || github.sha }}
 
   build-and-push:
     needs: lint
