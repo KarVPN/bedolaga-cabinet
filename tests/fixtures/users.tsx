@@ -10,7 +10,11 @@ import '../../src/styles/globals.css';
 usePermissionStore.setState({
   permissions: location.search.includes('readonly')
     ? ['users:read']
-    : ['users:read', 'bulk_actions:execute'],
+    : [
+        'users:read',
+        'bulk_actions:execute',
+        ...(location.search.includes('no-notify') ? [] : ['users:send_message']),
+      ],
   isLoaded: true,
 });
 createRoot(document.getElementById('root')!).render(

@@ -24,7 +24,13 @@ const operation = (overrides = {}) => ({
 async function setup(
   page: Page,
   restored = false,
-  mode: 'complete' | 'batches' | 'cancel' | 'uncertain' = 'complete',
+  mode:
+    | 'complete'
+    | 'batches'
+    | 'cancel'
+    | 'uncertain'
+    | 'notify-backlog'
+    | 'notify-failure' = 'complete',
   previewOverrides: Record<string, unknown> = {},
 ) {
   page.on('pageerror', (error) => console.error('PAGE ERROR', error));
@@ -68,13 +74,32 @@ async function setup(
       };
     } else if (path.endsWith('/user-bulk-operations')) data = restored ? [current] : [];
     else if (path.endsWith('/preview')) {
-      previews.push(req.postDataJSON());
-      current = operation(previewOverrides);
+      const input = req.postDataJSON();
+      previews.push(input);
+      current = operation({
+        action: input.action,
+        params: {
+          traffic_gb: input.traffic_gb ?? null,
+          days: input.days ?? null,
+          notify_users: input.notify_users ?? false,
+          notification_message: input.notification_message ?? null,
+        },
+        ...previewOverrides,
+      });
       data = current;
     } else if (path.endsWith('/cancel')) {
       current = operation({ state: 'running', cancel_requested: true });
       data = current;
       releaseCancelledRun?.();
+    } else if (path.endsWith('/notification-errors')) {
+      data = [
+        {
+          user_id: 7,
+          subscription_id: null,
+          state: 'uncertain',
+          message: 'Доставка не подтверждена; автоматического повтора нет',
+        },
+      ];
     } else if (path.endsWith('/errors')) {
       data = [
         {
@@ -86,11 +111,18 @@ async function setup(
       ];
     } else if (path.endsWith('/run')) {
       runs++;
-      current = operation({ state: 'running' });
+      const params = current.params;
+      const action = current.action;
+      current = operation({ state: 'running', params, action });
       if (mode === 'cancel') await cancelGate;
       else await new Promise((resolve) => setTimeout(resolve, 250));
       current = operation({
         state: 'completed',
+        params,
+        action,
+        notifications: params.notify_users
+          ? { sent: 24, pending: 0, failed: 0, uncertain: 0, skipped: 1 }
+          : {},
         processed: 25,
         success: 24,
         items: { success: 25, skipped: 1 },
@@ -118,6 +150,18 @@ async function setup(
           uncertain: 1,
           items: { uncertain: 1, success: 24, skipped: 1 },
         });
+      if (mode === 'notify-backlog' && runs === 1)
+        current = {
+          ...current,
+          state: 'paused',
+          notifications: { sent: 23, pending: 1, failed: 0, uncertain: 0, skipped: 1 },
+        };
+      if (mode === 'notify-failure')
+        current = {
+          ...current,
+          state: 'needs_review',
+          notifications: { sent: 23, pending: 0, failed: 0, uncertain: 1, skipped: 1 },
+        };
       data = current;
     } else if (path.endsWith('/events')) {
       await route.fulfill({
@@ -340,3 +384,92 @@ for (const viewport of [
     await expect(dialog).toHaveCount(0);
   });
 }
+
+test('extension preview includes the immutable custom Telegram receipt and opt-out sends no text', async ({
+  page,
+}) => {
+  const state = await setup(page);
+  await page.getByRole('checkbox', { name: 'Выбрать User 1', exact: true }).check();
+  await page.getByLabel('Массовое действие', { exact: true }).selectOption('extend_subscription');
+  await page.getByLabel('Количество дней').fill('7');
+  await page.getByLabel('Отправить уведомление в Telegram', { exact: true }).check();
+  const custom = 'Компенсация за простой с 11 по 14 октября. <b>Это обычный текст</b>';
+  await page.getByLabel('Дополнительный текст сообщения').fill(custom);
+  await page.getByRole('button', { name: 'Предпросмотр и подтверждение' }).click();
+  const sample = page.getByRole('dialog').getByLabel('Пример уведомления');
+  await expect(sample).toContainText('продлена на 7 дней');
+  await expect(sample).toContainText(custom);
+  await expect(sample.locator('b')).toHaveCount(0);
+  expect(state.previews[0]).toMatchObject({
+    action: 'extend_subscription',
+    days: 7,
+    notify_users: true,
+    notification_message: custom,
+  });
+  await page.keyboard.press('Escape');
+  await page.getByLabel('Отправить уведомление в Telegram', { exact: true }).uncheck();
+  await page.getByRole('button', { name: 'Предпросмотр и подтверждение' }).click();
+  await expect(page.getByRole('dialog').getByLabel('Пример уведомления')).toHaveCount(0);
+  expect(state.previews[1]).not.toHaveProperty('notification_message');
+  expect(state.previews[1]).not.toHaveProperty('notify_users');
+  expect(state.runs()).toBe(0);
+});
+
+test('receipt-only backlog continues without a second confirmation', async ({ page }) => {
+  const state = await setup(page, false, 'notify-backlog');
+  await page.getByRole('checkbox', { name: 'Выбрать User 1', exact: true }).check();
+  await page.getByLabel('Отправить уведомление в Telegram', { exact: true }).check();
+  await page.getByRole('button', { name: 'Предпросмотр и подтверждение' }).click();
+  await page.getByRole('button', { name: 'Подтвердить и запустить' }).click();
+  await expect(page.getByLabel('Результат уведомлений')).toContainText('отправлено 24');
+  expect(state.runs()).toBe(2);
+});
+
+test('uncertain receipt exposes delivery errors without repeating extension', async ({ page }) => {
+  const state = await setup(page, false, 'notify-failure');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('checkbox', { name: 'Выбрать User 1', exact: true }).check();
+  await page.getByLabel('Массовое действие', { exact: true }).selectOption('extend_subscription');
+  await page.getByLabel('Отправить уведомление в Telegram', { exact: true }).check();
+  await page
+    .getByLabel('Дополнительный текст сообщения')
+    .fill('Компенсация за простой с 11 по 14 октября');
+  await page.getByRole('button', { name: 'Предпросмотр и подтверждение' }).click();
+  await expectDialogInsideViewport(page);
+  await page.screenshot({ path: 'test-results/bulk-notification-preview.png' });
+  await page.getByRole('button', { name: 'Подтвердить и запустить' }).click();
+  await expect(page.getByLabel('Результат уведомлений')).toContainText(
+    'Доставка не подтверждена 1',
+  );
+  await page.getByRole('button', { name: 'Ошибки и пропуски уведомлений' }).click();
+  await expect(
+    page.getByText(
+      'Уведомление пользователю #7: Доставка не подтверждена; автоматического повтора нет',
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Обновить состояние' }).click();
+  expect(state.runs()).toBe(1);
+});
+
+test('notification opt-in refuses a legacy backend instead of silently extending without a receipt', async ({
+  page,
+}) => {
+  const state = await setup(page, false, 'complete', { params: { days: 7, traffic_gb: null } });
+  await page.getByRole('checkbox', { name: 'Выбрать User 1', exact: true }).check();
+  await page.getByLabel('Отправить уведомление в Telegram', { exact: true }).check();
+  await page.getByRole('button', { name: 'Предпросмотр и подтверждение' }).click();
+  await expect(page.getByRole('alert')).toContainText('Сначала обновите серверную часть');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect(state.runs()).toBe(0);
+});
+
+test('bulk executor without messaging permission has no notification controls', async ({
+  page,
+}) => {
+  await setup(page);
+  await page.goto('/tests/fixtures/users.html?no-notify');
+  await page.getByRole('checkbox', { name: 'Выбрать User 1', exact: true }).check();
+  await expect(page.getByLabel('Отправить уведомление в Telegram', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Предпросмотр и подтверждение' })).toBeVisible();
+});
